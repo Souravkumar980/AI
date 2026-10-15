@@ -1,0 +1,158 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    overflow-x: hidden;
+  }
+  body {
+    overflow-x: hidden;
+    background-color: #f8fafc;
+    color: #0f172a;
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+/* Subtle Bento Background */
+.bg-bento-grid {
+  background-color: #f8fafc;
+  background-image: radial-gradient(rgba(15, 23, 42, 0.08) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+/* Pop-Art Halftone Dot Pattern (Orange and Green dots on cream like Screenshot) */
+.bg-pop-halftone {
+  background-color: #FFFDF9;
+  background-image: 
+    radial-gradient(#FF9933 1.3px, transparent 1.3px),
+    radial-gradient(#138808 1.3px, transparent 1.3px);
+  background-size: 28px 28px;
+  background-position: 0 0, 14px 14px;
+}
+
+/* Pop-Art Badges from Screenshot */
+.pop-badge-yellow {
+  background-color: #FFE600;
+  border: 2px solid #000;
+  box-shadow: 3px 3px 0px #000;
+  transform: rotate(-1deg);
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.pop-badge-red {
+  background-color: #FF2A2A;
+  color: #ffffff;
+  border: 3px solid #000;
+  box-shadow: 4px 4px 0px #000;
+  transform: rotate(1deg);
+  font-family: 'Bangers', Impact, sans-serif;
+  letter-spacing: 0.05em;
+}
+
+/* Neumorphic Soft UI Utilities */
+.soft-card {
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.04), 0 2px 4px -2px rgba(0, 0, 0, 0.04);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.soft-card-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -4px rgba(0, 0, 0, 0.04);
+}
+
+.soft-btn {
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.05), -2px -2px 5px rgba(255, 255, 255, 0.8);
+  transition: all 0.15s ease;
+}
+
+.soft-btn:hover {
+  box-shadow: 3px 3px 8px rgba(0, 0, 0, 0.08), -3px -3px 8px rgba(255, 255, 255, 1);
+  transform: translateY(-1px);
+}
+
+.soft-btn:active {
+  box-shadow: inset 1px 1px 3px rgba(0, 0, 0, 0.1), inset -1px -1px 3px rgba(255, 255, 255, 0.9);
+  transform: translateY(1px);
+}
+
+/* Bento Solid Card */
+.bento-card {
+  background: #ffffff;
+  border: 2px solid #0f172a;
+  border-radius: 1rem;
+  box-shadow: 4px 4px 0px #0f172a;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.bento-card:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 5px 5px 0px #0f172a;
+}
+
+/* High-Impact Pop Button */
+.bento-btn {
+  border: 2px solid #0f172a;
+  border-radius: 0.75rem;
+  box-shadow: 3px 3px 0px #0f172a;
+  font-weight: 700;
+  transition: all 0.12s ease;
+  user-select: none;
+}
+
+.bento-btn:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0px #0f172a;
+}
+
+.bento-btn:active {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0px #0f172a;
+}
+
+/* Clean Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Pop-Art Bulletin Marquee Animation */
+@keyframes bulletinMarquee {
+  0% {
+    transform: translateX(0%);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.animate-bulletin-marquee {
+  display: inline-flex;
+  white-space: nowrap;
+  animation: bulletinMarquee 32s linear infinite;
+  will-change: transform;
+}
+
+.animate-bulletin-marquee:hover {
+  animation-play-state: paused;
+}

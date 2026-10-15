@@ -1,0 +1,13 @@
+{
+  "remote.portsAttributes": {
+    "3000": {
+      "label": "Frontend Preview",
+      "onAutoForward": "openBrowser",
+      "visibility": "public"
+    },
+    "5000": {
+      "label": "Backend API",
+      "visibility": "public"
+    }
+  }
+}
