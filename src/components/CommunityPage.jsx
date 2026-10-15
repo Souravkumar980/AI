@@ -872,6 +872,18 @@ export default function CommunityPage({ onSelectPage }) {
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
   }, []);
 
+  // Auto-admit transition: If user is waiting on a private channel gate and gets approved, enter channel immediately in real-time!
+  useEffect(() => {
+    if (activeChatRoom && activeChatRoom.startsWith('gate_') && currentUser) {
+      const realChanId = activeChatRoom.replace('gate_', '');
+      const chan = channels.find(c => c.id === realChanId);
+      if (chan && (chan.creator_id === currentUser.id || chan.members?.includes(currentUser.id) || currentUser.is_admin)) {
+        setActiveChatRoom(realChanId);
+        setActiveChannelObj(chan);
+      }
+    }
+  }, [channels, activeChatRoom, currentUser]);
+
   // Handle URL join token (e.g. #community?join=token or ?join=token)
   useEffect(() => {
     const handleJoinUrl = () => {
@@ -1066,20 +1078,34 @@ export default function CommunityPage({ onSelectPage }) {
       ctx.drawImage(img, drawX, drawY, drawW, drawH);
       const dataUrl = canvas.toDataURL('image/jpeg', 0.88);
 
+      let finalAvatarUrl = dataUrl;
+      try {
+        const uploadRes = await fetch('/api/community/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ filename: `avatar_${currentUser.id}.jpg`, data: dataUrl, mimeType: 'image/jpeg' })
+        });
+        if (uploadRes.ok) {
+          const upData = await uploadRes.json();
+          if (upData.url) finalAvatarUrl = upData.url;
+        }
+      } catch (e) {}
+
       await fetch('/api/community/profile/avatar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           user_id: currentUser.id,
-          avatar_url: dataUrl
+          avatar_url: finalAvatarUrl
         })
       });
 
-      const updatedUser = { ...currentUser, avatar_url: dataUrl };
+      const updatedUser = { ...currentUser, avatar_url: finalAvatarUrl };
       setCurrentUser(updatedUser);
       localStorage.setItem('ep_community_user', JSON.stringify(updatedUser));
-      setUsers(prev => prev.map(u => u.id === currentUser.id ? { ...u, avatar_url: dataUrl } : u));
-      setMessages(prev => prev.map(m => m.user_id === currentUser.id ? { ...m, user_avatar: dataUrl } : m));
+      setUsers(prev => prev.map(u => u.id === currentUser.id ? { ...u, avatar_url: finalAvatarUrl } : u));
+      setMessages(prev => prev.map(m => m.user_id === currentUser.id ? { ...m, user_avatar: finalAvatarUrl } : m));
+      broadcastCrossTab({ type: 'BADGE_UPDATE', user_id: currentUser.id, avatar_url: finalAvatarUrl });
       setUsernameUpdateMsg('✓ Profile picture adjusted & saved successfully!');
       setCropModalOpen(false);
     } catch (err) {
@@ -1510,17 +1536,86 @@ export default function CommunityPage({ onSelectPage }) {
         isUploading: true
       }]);
 
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        setTimeout(() => {
-          setAttachedFiles(prev => prev.map(f => f.id === tempId ? {
-            ...f,
-            url: event.target.result,
-            isUploading: false
-          } : f));
-        }, 350);
+      const processAndUpload = async () => {
+        try {
+          let uploadData = '';
+          let mime = file.type || 'application/octet-stream';
+
+          if (type === 'image') {
+            uploadData = await new Promise((resolve) => {
+              const r = new FileReader();
+              r.onload = (ev) => {
+                const img = new Image();
+                img.onload = () => {
+                  const maxDim = 1280;
+                  let w = img.width;
+                  let h = img.height;
+                  if (w > maxDim || h > maxDim) {
+                    if (w > h) {
+                      h = Math.round((h * maxDim) / w);
+                      w = maxDim;
+                    } else {
+                      w = Math.round((w * maxDim) / h);
+                      h = maxDim;
+                    }
+                  }
+                  const canvas = document.createElement('canvas');
+                  canvas.width = w;
+                  canvas.height = h;
+                  const ctx = canvas.getContext('2d');
+                  ctx.drawImage(img, 0, 0, w, h);
+                  resolve(canvas.toDataURL('image/jpeg', 0.82));
+                };
+                img.onerror = () => resolve(ev.target.result);
+                img.src = ev.target.result;
+              };
+              r.readAsDataURL(file);
+            });
+            mime = 'image/jpeg';
+          } else {
+            uploadData = await new Promise((resolve) => {
+              const r = new FileReader();
+              r.onload = (ev) => resolve(ev.target.result);
+              r.readAsDataURL(file);
+            });
+          }
+
+          const apiUrl = (typeof window !== 'undefined' && window.__API_BASE_URL__)
+            ? `${window.__API_BASE_URL__.replace(/\/+$/, '')}/api/community/upload`
+            : '/api/community/upload';
+
+          const res = await fetch(apiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              filename: file.name,
+              data: uploadData,
+              mimeType: mime
+            })
+          });
+
+          if (res.ok) {
+            const data = await res.json();
+            setAttachedFiles(prev => prev.map(f => f.id === tempId ? {
+              ...f,
+              url: data.url,
+              size: data.size || f.size,
+              isUploading: false
+            } : f));
+          } else {
+            setAttachedFiles(prev => prev.map(f => f.id === tempId ? {
+              ...f,
+              url: uploadData,
+              isUploading: false
+            } : f));
+          }
+        } catch (err) {
+          console.error('File upload failed:', err);
+          setAttachedFiles(prev => prev.filter(f => f.id !== tempId));
+        }
       };
-      reader.readAsDataURL(file);
+
+      processAndUpload();
     }
     e.target.value = '';
   };
@@ -1793,8 +1888,13 @@ export default function CommunityPage({ onSelectPage }) {
     };
 
     setAdminQueries([newQuery, ...adminQueries]);
+    broadcastCrossTab({ type: 'NEW_QUERY', query: newQuery });
     try {
-      await fetch('/api/community/contact', {
+      const apiUrl = (typeof window !== 'undefined' && window.__API_BASE_URL__)
+        ? `${window.__API_BASE_URL__.replace(/\/+$/, '')}/api/community/contact`
+        : '/api/community/contact';
+
+      await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newQuery)
@@ -1879,8 +1979,24 @@ export default function CommunityPage({ onSelectPage }) {
     return m.channel_id === activeChatRoom;
   });
 
-  // User's unread notifications count
-  const myNotifications = notifications.filter(n => n.recipient_username === currentUser?.username?.toLowerCase());
+  // User's unread notifications count:
+  // Dynamically match by recipient username, recipient ID, requester ID, or creator ID for channel requests
+  const myNotifications = notifications.filter(n => {
+    if (!currentUser) return false;
+    const curUname = (currentUser.username || '').trim().toLowerCase();
+    const notifUname = (n.recipient_username || '').trim().toLowerCase();
+    if (notifUname && notifUname === curUname) return true;
+    if (n.recipient_id && n.recipient_id === currentUser.id) return true;
+    if (n.requester_id && n.requester_id === currentUser.id && n.type === 'channel_admit') return true;
+    if (n.type === 'channel_request' && n.channel_id) {
+      const chan = channels.find(c => c.id === n.channel_id);
+      if (chan && (chan.creator_id === currentUser.id || (chan.creator_username || '').trim().toLowerCase() === curUname)) return true;
+    }
+    if (currentUser.is_admin && (notifUname === 'admin' || notifUname === 'omkumar' || notifUname === 'omkumar_admin')) {
+      return true;
+    }
+    return false;
+  });
 
   // Filter channels strictly: private channels are HIDDEN unless user is creator, member, or pending requester
   const visibleChannels = channels.filter(chan => {
@@ -2371,7 +2487,7 @@ export default function CommunityPage({ onSelectPage }) {
             {activeChannelObj && (
               <button
                 onClick={() => {
-                  const link = `${window.location.origin}/community/join=${activeChannelObj.join_token}`;
+                  const link = `${window.location.origin}/?page=community&join=${activeChannelObj.join_token}`;
                   navigator.clipboard.writeText(link);
                   alert(`✓ Channel invite link copied to clipboard!\nShare this with friends: ${link}`);
                 }}

@@ -31,10 +31,11 @@ export function cleanHandle(input, platform) {
   str = str.replace(/^[#@]/, '');
   str = str.split('?')[0].split('#')[0].split('&')[0];
   const parts = str.split('/').filter(Boolean);
+  const reserved = ['p', 'reel', 'reels', 'tv', 'stories', 'explore', 'accounts', 'direct', 'static', 'rsrc.php'];
   if (parts.length > 0) {
-    if (['p', 'reel', 'tv', 'stories'].includes(parts[0].toLowerCase()) && parts.length > 1) {
+    if (reserved.includes(parts[0].toLowerCase()) && parts.length > 1) {
       str = parts[1];
-    } else {
+    } else if (!reserved.includes(parts[0].toLowerCase())) {
       str = parts[0];
     }
   }
@@ -76,10 +77,10 @@ export async function autoFetchSocialProfile(inputUrl, platformHint = 'auto') {
     return { success: false, error: 'Could not parse handle' };
   }
 
-  // 1. Try server API first if available (with 3.5s timeout)
+  // 1. Try server API first if available (with 12s timeout)
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3500);
+    const timeoutId = setTimeout(() => controller.abort(), 12000);
 
     let targetUrl = raw;
     if (!targetUrl.startsWith('http')) {

@@ -1,5 +1,7 @@
 const express = require('express');
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 const router = express.Router();
 const db = require('./db');
 const {
@@ -2829,6 +2831,77 @@ router.get('/giphy/trending', async (req, res) => {
   }
 });
 
+// 5d. Dedicated Media / File Upload Handler
+const serverUploadsDir = path.join(__dirname, 'uploads');
+const publicUploadsDir = path.join(__dirname, '..', 'public', 'uploads');
+if (!fs.existsSync(serverUploadsDir)) fs.mkdirSync(serverUploadsDir, { recursive: true });
+if (!fs.existsSync(publicUploadsDir)) fs.mkdirSync(publicUploadsDir, { recursive: true });
+
+router.post('/community/upload', (req, res) => {
+  try {
+    const { filename, data, mimeType } = req.body;
+    if (!data) return res.status(400).json({ error: 'No file data provided' });
+
+    let buffer;
+    let ext = 'bin';
+
+    if (data.startsWith('data:')) {
+      const commaIdx = data.indexOf(',');
+      const semiIdx = data.indexOf(';');
+      const detectedMime = (semiIdx !== -1 && commaIdx !== -1) ? data.slice(5, semiIdx) : (mimeType || 'application/octet-stream');
+      ext = detectedMime.split('/')[1]?.split('+')[0] || 'bin';
+      buffer = Buffer.from(data.slice(commaIdx + 1), 'base64');
+    } else {
+      buffer = Buffer.from(data, 'base64');
+      if (mimeType) ext = mimeType.split('/')[1]?.split('+')[0] || 'bin';
+    }
+
+    if (buffer.length > 25 * 1024 * 1024) {
+      return res.status(400).json({ error: 'File exceeds 25MB maximum limit' });
+    }
+
+    const safeExt = ext.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8) || 'bin';
+    const uniqueName = 'file_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6) + '.' + safeExt;
+
+    fs.writeFileSync(path.join(serverUploadsDir, uniqueName), buffer);
+    try {
+      fs.writeFileSync(path.join(publicUploadsDir, uniqueName), buffer);
+    } catch (e) {}
+
+    const fileUrl = `/api/community/files/${uniqueName}`;
+    res.json({
+      success: true,
+      url: fileUrl,
+      filename: uniqueName,
+      originalName: filename || uniqueName,
+      size: (buffer.length / 1024).toFixed(0) + ' KB',
+      bytes: buffer.length
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 5e. Dedicated File Serving with Caching
+router.get('/community/files/:filename', (req, res) => {
+  try {
+    const safeName = path.basename(req.params.filename);
+    let targetPath = path.join(serverUploadsDir, safeName);
+    if (!fs.existsSync(targetPath)) {
+      targetPath = path.join(publicUploadsDir, safeName);
+    }
+
+    if (!fs.existsSync(targetPath)) {
+      return res.status(404).send('File not found');
+    }
+
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    res.sendFile(targetPath);
+  } catch (error) {
+    res.status(500).send('Error reading file');
+  }
+});
+
 // 6. Delete Message (Admin or Author)
 router.delete('/community/messages/:id', (req, res) => {
   try {
@@ -2915,7 +2988,8 @@ router.post(['/community/channels/request', '/community/channels/:id/request'], 
     // Insert persistent notification for the channel creator
     const notifId = 'notif_chan_' + Date.now() + Math.random().toString(36).substr(2, 4);
     const notifMsg = `@${username || 'user'} (${name || 'Citizen'}) requested to participate in your private channel "${chan.name}"`;
-    const creatorUname = String(chan.creator_username || '').toLowerCase();
+    const creatorUser = db.prepare('SELECT id, username FROM community_users WHERE id = ?').get(chan.creator_id);
+    const creatorUname = String(creatorUser ? creatorUser.username : (chan.creator_username || '')).toLowerCase();
     
     db.prepare(`
       INSERT INTO community_notifications (id, recipient_username, sender_username, sender_name, message, is_read, type, channel_id, requester_id, created_at)
@@ -2977,9 +3051,9 @@ router.post(['/community/channels/admit', '/community/channels/:id/admit'], (req
       const notifId = 'notif_adm_' + Date.now() + Math.random().toString(36).substr(2, 4);
       const admitMsg = `✓ You have been approved to join private channel "${chan.name}"!`;
       db.prepare(`
-        INSERT INTO community_notifications (id, recipient_username, sender_username, sender_name, message, is_read, type, channel_id, created_at)
-        VALUES (?, ?, ?, ?, ?, 0, 'channel_admit', ?, ?)
-      `).run(notifId, targetUser.username.toLowerCase(), chan.creator_username, chan.creator_name, admitMsg, chanId, nowTime);
+        INSERT INTO community_notifications (id, recipient_username, sender_username, sender_name, message, is_read, type, channel_id, requester_id, created_at)
+        VALUES (?, ?, ?, ?, ?, 0, 'channel_admit', ?, ?, ?)
+      `).run(notifId, targetUser.username.toLowerCase(), chan.creator_username, chan.creator_name, admitMsg, chanId, participant_user_id, nowTime);
 
       broadcastCommunityEvent({
         type: 'NEW_NOTIFICATION',

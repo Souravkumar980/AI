@@ -231,28 +231,46 @@ async function fetchInstagramProfile(input) {
   // Strip query parameters (?igsh=... etc) and hash fragments
   cleanHandle = cleanHandle.split('?')[0].split('#')[0].replace(/\/+$/, '');
 
+  const reserved = ['p', 'reel', 'reels', 'tv', 'stories', 'explore', 'accounts', 'direct', 'static', 'rsrc.php', 'api', 'graphql', 'legal', 'about'];
+
   // Check if it is a post or reel link
-  const postMatch = cleanHandle.match(/(?:instagram\.com|instagr\.am)\/(?:reel|p|tv)\/([a-zA-Z0-9_-]+)/i);
+  const postMatch = cleanHandle.match(/(?:instagram\.com|instagr\.am)\/(?:reel|reels|p|tv)\/([a-zA-Z0-9_-]+)/i);
   if (postMatch) {
     const postCode = postMatch[1];
     const postEmbedUrl = `https://www.instagram.com/p/${postCode}/embed/`;
     try {
       const postHtml = await fetchRawHtml(postEmbedUrl, { 'User-Agent': 'Mozilla/5.0' });
-      const authorMatch = postHtml.match(/(?:instagram\.com|instagr\.am)\/([a-zA-Z0-9_.]+)\//i) ||
-                          postHtml.match(/"username":"([a-zA-Z0-9_.]+)"/i) ||
-                          postHtml.match(/@([a-zA-Z0-9_.]+)/i);
-      if (authorMatch && !['p', 'reel', 'tv', 'explore', 'stories', 'accounts'].includes(authorMatch[1].toLowerCase())) {
-        cleanHandle = authorMatch[1];
+      // Look for author username
+      const userMatches = postHtml.match(/"username":"([a-zA-Z0-9_.]+)"/g);
+      if (userMatches) {
+        for (const um of userMatches) {
+          const u = um.replace(/"username":"|"/g, '');
+          if (u && !reserved.includes(u.toLowerCase())) {
+            cleanHandle = u;
+            break;
+          }
+        }
       }
     } catch (e) {}
+  } else {
+    const urlMatch = cleanHandle.match(/(?:instagram\.com|instagr\.am)\/([a-zA-Z0-9_.]+)/i);
+    if (urlMatch && !reserved.includes(urlMatch[1].toLowerCase())) {
+      cleanHandle = urlMatch[1];
+    } else {
+      const plain = cleanHandle.replace(/^https?:\/\/(www\.)?instagram\.com\//i, '').replace(/^@/, '').replace(/\/.*$/, '').trim();
+      if (plain && !reserved.includes(plain.toLowerCase())) {
+        cleanHandle = plain;
+      }
+    }
   }
 
-  const urlMatch = cleanHandle.match(/(?:instagram\.com|instagr\.am)\/([a-zA-Z0-9_.]+)/i);
-  if (urlMatch) cleanHandle = urlMatch[1];
   cleanHandle = cleanHandle.replace(/^@/, '').replace(/\/+$/, '');
+  if (reserved.includes(cleanHandle.toLowerCase())) {
+    cleanHandle = '';
+  }
 
-  const embedUrl = `https://www.instagram.com/${cleanHandle}/embed/`;
-  const profileUrl = `https://www.instagram.com/${cleanHandle}/`;
+  const embedUrl = cleanHandle ? `https://www.instagram.com/${cleanHandle}/embed/` : '';
+  const profileUrl = cleanHandle ? `https://www.instagram.com/${cleanHandle}/` : input;
 
   let avatarUrl = null;
   let followers = null;

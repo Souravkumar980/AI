@@ -1,10 +1,10 @@
 -- Exposed Propagandus Database Dump
--- Auto-generated on: 2026-10-15T09:13:27.169Z
+-- Auto-generated on: 2026-10-15T13:22:20.766Z
 
 SET FOREIGN_KEY_CHECKS = 0;
 
 INSERT INTO `entities` (`id`, `name`, `handle_x`, `handle_yt`, `handle_insta`, `avatar_url`, `categories`, `party`, `institution`, `narrative`, `fact_check`, `proof_url`, `upvotes`, `is_verified`, `submitted_by_ip`, `created_at`, `updated_at`) VALUES
-('prop-1792055606680-f3dcn9', 'Dhruv Rathee', NULL, 'Dhruvrathee', 'dhruvrathee', 'https://yt3.googleusercontent.com/ATJuCH36wHPiFwumVBm423ouLVGQtq2pkPMOlSCclqqXErazOWyl4n07MRmbFnSJTL5P02Fq=s800-c-k-c0x00ffffff-no-rj', '["Social Media","Political Party","Institutions"]', 'Aam Aadmi Party (AAP) – National Capital Region (Delhi) and Punjab', 'CJP (Chu**ya Janta Party)', 'He is the INDIA no 1 motherfucker and propagandus', NULL, NULL, 0, 1, '152.59.143.146', '2026-10-15T09:13:26.680Z', '2026-10-15T09:13:26.680Z'),
+('prop-1792055606680-f3dcn9', 'Dhruv Rathee', NULL, 'Dhruvrathee', 'dhruvrathee', 'https://yt3.googleusercontent.com/ATJuCH36wHPiFwumVBm423ouLVGQtq2pkPMOlSCclqqXErazOWyl4n07MRmbFnSJTL5P02Fq=s800-c-k-c0x00ffffff-no-rj', '["Social Media","Political Party","Institutions"]', 'Aam Aadmi Party (AAP) – National Capital Region (Delhi) and Punjab', 'CJP (Chu**ya Janta Party)', 'He is the INDIA no 1 motherfucker and propagandus', NULL, NULL, 1, 1, '152.59.143.146', '2026-10-15T09:13:26.680Z', '2026-10-15T09:13:26.680Z'),
 ('prop-1791964760398-bwcc8l', 'Indlans', NULL, 'INDlANS', NULL, 'https://unavatar.io/youtube/@INDlANS', '["Social Media"]', NULL, NULL, 'promots false info', NULL, NULL, 27, 1, '152.59.147.155', '2026-10-14T07:59:20.398Z', '2026-10-14T14:40:39.220Z')
 ON DUPLICATE KEY UPDATE `upvotes`=VALUES(`upvotes`), `narrative`=VALUES(`narrative`);
 

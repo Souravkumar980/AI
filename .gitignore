@@ -11,3 +11,6 @@ db_config.php
 credentials*.json
 token*.txt
 attach/*.mp4
+server/uploads/
+public/uploads/*.mp4
+public/uploads/*.mov
