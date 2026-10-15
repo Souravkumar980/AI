@@ -1,30 +1,30 @@
 {
-  "timestamp": "2026-10-15T09:10:36.308Z",
+  "timestamp": "2026-10-15T09:13:27.166Z",
   "platform": "Exposed Propagandus",
   "domain": "exposedpropagandus.is-best.net",
   "totalEntities": 2,
-  "totalReports": 1,
+  "totalReports": 0,
   "totalNationalists": 5,
   "data": {
     "entities": [
       {
-        "id": "prop-1791982457781-qpedvg",
+        "id": "prop-1792055606680-f3dcn9",
         "name": "Dhruv Rathee",
         "handle_x": null,
         "handle_yt": "Dhruvrathee",
         "handle_insta": "dhruvrathee",
-        "avatar_url": "https://scontent-sin6-1.cdninstagram.com/v/t51.2885-19/38540802_494678747626293_4673257651675594752_n.jpg?stp=dst-jpg_s100x100_tt6&_nc_cat=1&ccb=7-5&_nc_sid=bf7eb4&efg=eyJ2ZW5jb2RlX3RhZyI6InByb2ZpbGVfcGljLnd3dy43NDAuQzMifQu00253Du00253D&_nc_ohc=5sgKjTy8oeAQ7kNvwGn9qut&_nc_oc=AdrUcQp0JlN8uR7WvLi8dsKQ7ajzRvU7cUi2E2cqNRXhYGZZKAajJfSAgWJepI8f0hw&_nc_zt=24&_nc_ht=scontent-sin6-1.cdninstagram.com&_nc_ss=7060f&oh=00_AQN8K3t2k6dprvtORpdgJBTPCX7ZTsX7aVh8g380e4dv2g&oe=6AD566EC",
-        "categories": "[\"Social Media\",\"Political Party\"]",
+        "avatar_url": "https://yt3.googleusercontent.com/ATJuCH36wHPiFwumVBm423ouLVGQtq2pkPMOlSCclqqXErazOWyl4n07MRmbFnSJTL5P02Fq=s800-c-k-c0x00ffffff-no-rj",
+        "categories": "[\"Social Media\",\"Political Party\",\"Institutions\"]",
         "party": "Aam Aadmi Party (AAP) – National Capital Region (Delhi) and Punjab",
-        "institution": null,
-        "narrative": "he is the most wanted cockroach and he is shit",
+        "institution": "CJP (Chu**ya Janta Party)",
+        "narrative": "He is the INDIA no 1 motherfucker and propagandus",
         "fact_check": null,
         "proof_url": null,
-        "upvotes": 5,
+        "upvotes": 0,
         "is_verified": 1,
-        "submitted_by_ip": "152.59.147.155",
-        "created_at": "2026-10-14T12:54:17.781Z",
-        "updated_at": "2026-10-14T12:54:17.781Z",
+        "submitted_by_ip": "152.59.143.146",
+        "created_at": "2026-10-15T09:13:26.680Z",
+        "updated_at": "2026-10-15T09:13:26.680Z",
         "contact_phone": null,
         "contact_email": null,
         "other_links": null
@@ -52,18 +52,7 @@
         "other_links": null
       }
     ],
-    "reports": [
-      {
-        "id": "rep-1792055435265-8z3j8j",
-        "entity_id": "prop-1791982457781-qpedvg",
-        "entity_name": "Dhruv Rathee",
-        "report_type": "Edit",
-        "message": "update him",
-        "status": "pending",
-        "reported_by_ip": "152.59.143.146",
-        "created_at": "2026-10-15T09:10:35.265Z"
-      }
-    ],
+    "reports": [],
     "nationalists": [
       {
         "id": "nat-1792053208024-0ac2i5",

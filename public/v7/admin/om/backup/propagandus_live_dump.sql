@@ -1,10 +1,10 @@
 -- Exposed Propagandus Database Dump
--- Auto-generated on: 2026-10-15T09:10:36.308Z
+-- Auto-generated on: 2026-10-15T09:13:27.169Z
 
 SET FOREIGN_KEY_CHECKS = 0;
 
 INSERT INTO `entities` (`id`, `name`, `handle_x`, `handle_yt`, `handle_insta`, `avatar_url`, `categories`, `party`, `institution`, `narrative`, `fact_check`, `proof_url`, `upvotes`, `is_verified`, `submitted_by_ip`, `created_at`, `updated_at`) VALUES
-('prop-1791982457781-qpedvg', 'Dhruv Rathee', NULL, 'Dhruvrathee', 'dhruvrathee', 'https://scontent-sin6-1.cdninstagram.com/v/t51.2885-19/38540802_494678747626293_4673257651675594752_n.jpg?stp=dst-jpg_s100x100_tt6&_nc_cat=1&ccb=7-5&_nc_sid=bf7eb4&efg=eyJ2ZW5jb2RlX3RhZyI6InByb2ZpbGVfcGljLnd3dy43NDAuQzMifQu00253Du00253D&_nc_ohc=5sgKjTy8oeAQ7kNvwGn9qut&_nc_oc=AdrUcQp0JlN8uR7WvLi8dsKQ7ajzRvU7cUi2E2cqNRXhYGZZKAajJfSAgWJepI8f0hw&_nc_zt=24&_nc_ht=scontent-sin6-1.cdninstagram.com&_nc_ss=7060f&oh=00_AQN8K3t2k6dprvtORpdgJBTPCX7ZTsX7aVh8g380e4dv2g&oe=6AD566EC', '["Social Media","Political Party"]', 'Aam Aadmi Party (AAP) – National Capital Region (Delhi) and Punjab', NULL, 'he is the most wanted cockroach and he is shit', NULL, NULL, 5, 1, '152.59.147.155', '2026-10-14T12:54:17.781Z', '2026-10-14T12:54:17.781Z'),
+('prop-1792055606680-f3dcn9', 'Dhruv Rathee', NULL, 'Dhruvrathee', 'dhruvrathee', 'https://yt3.googleusercontent.com/ATJuCH36wHPiFwumVBm423ouLVGQtq2pkPMOlSCclqqXErazOWyl4n07MRmbFnSJTL5P02Fq=s800-c-k-c0x00ffffff-no-rj', '["Social Media","Political Party","Institutions"]', 'Aam Aadmi Party (AAP) – National Capital Region (Delhi) and Punjab', 'CJP (Chu**ya Janta Party)', 'He is the INDIA no 1 motherfucker and propagandus', NULL, NULL, 0, 1, '152.59.143.146', '2026-10-15T09:13:26.680Z', '2026-10-15T09:13:26.680Z'),
 ('prop-1791964760398-bwcc8l', 'Indlans', NULL, 'INDlANS', NULL, 'https://unavatar.io/youtube/@INDlANS', '["Social Media"]', NULL, NULL, 'promots false info', NULL, NULL, 27, 1, '152.59.147.155', '2026-10-14T07:59:20.398Z', '2026-10-14T14:40:39.220Z')
 ON DUPLICATE KEY UPDATE `upvotes`=VALUES(`upvotes`), `narrative`=VALUES(`narrative`);
 
