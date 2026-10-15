@@ -662,8 +662,31 @@ $body = json_decode($inputJson, true) ?: ($GLOBALS['body'] ?? $_POST ?? []);
 $ip       = getClientIp();
 
 // -------------------------------------------------------------
-// 6. Public API Routes
+// 6. Global Client Key Verification Gate
 // -------------------------------------------------------------
+// Prevents unauthorized URL inspection, direct scraping, and data leakage
+if ($endpoint !== 'health') {
+    $headers = get_request_headers();
+    $appKey = $headers['x-app-key'] ?? $headers['x-client-key'] ?? $headers['x-admin-key'] ?? $headers['authorization'] ?? $_GET['key'] ?? '';
+    if (strpos($appKey, 'Bearer ') === 0) {
+        $appKey = trim(substr($appKey, 7));
+    }
+    $validClientKey = 'ep-client-v1-bharat-first-2024';
+    $isClientValid = ($appKey === $validClientKey ||
+                      $appKey === $master_secret_key ||
+                      $appKey === $master_admin_password ||
+                      strpos($appKey, 'ep-adm-') === 0);
+
+    if (!$isClientValid) {
+        http_response_code(401);
+        echo json_encode([
+            'error' => 'UNAUTHORIZED_API_ACCESS',
+            'status' => 401,
+            'message' => 'Direct manual access denied. A valid client key (X-App-Key header or ?key= param) is required to access Exposed Propagandus API services.'
+        ]);
+        exit;
+    }
+}
 
 // System Health Check
 if ($endpoint === 'health') {

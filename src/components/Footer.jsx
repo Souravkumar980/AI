@@ -1,7 +1,7 @@
 import React from 'react';
 import IndianFlagLogo from './IndianFlagLogo';
 
-export default function Footer({ onOpenSubmit, onOpenSuggest, onSelectPage }) {
+export default function Footer({ onOpenSubmit, onOpenSuggest, onSelectPage, onOpenDonate }) {
   const currentYear = new Date().getFullYear();
 
   return (
@@ -87,6 +87,16 @@ export default function Footer({ onOpenSubmit, onOpenSuggest, onSelectPage }) {
                   </button>
                 </li>
               )}
+              {onOpenDonate && (
+                <li>
+                  <button
+                    onClick={onOpenDonate}
+                    className="hover:text-popYellow transition-colors text-left text-popYellow font-bold flex items-center gap-1.5"
+                  >
+                    <span>❤️ Donate &amp; Support Digital Bharat</span>
+                  </button>
+                </li>
+              )}
             </ul>
           </div>
 
@@ -101,6 +111,16 @@ export default function Footer({ onOpenSubmit, onOpenSuggest, onSelectPage }) {
             <div className="pt-2 text-[11px] font-mono text-gray-400">
               Anti-Propaganda Citizens Network • Bharat
             </div>
+            {onOpenDonate && (
+              <div className="pt-3">
+                <button
+                  onClick={onOpenDonate}
+                  className="px-3.5 py-1.5 bg-popYellow hover:bg-yellow-400 text-black border-2 border-black rounded-xl text-xs font-black uppercase shadow-[2px_2px_0px_#000] flex items-center gap-1.5"
+                >
+                  <span>❤️ Donate (UPI)</span>
+                </button>
+              </div>
+            )}
           </div>
 
         </div>
@@ -113,6 +133,14 @@ export default function Footer({ onOpenSubmit, onOpenSuggest, onSelectPage }) {
           </div>
 
           <div className="flex items-center gap-3">
+            {onOpenDonate && (
+              <button
+                onClick={onOpenDonate}
+                className="text-popYellow font-bold hover:underline"
+              >
+                ❤️ Support the Devs
+              </button>
+            )}
             <span>Bharat Mata ki Jai <IndianFlagLogo className="w-4 h-3" /> </span>
           </div>
         </div>

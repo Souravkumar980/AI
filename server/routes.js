@@ -21,6 +21,40 @@ const { autoFetchSocialProfile } = require('./socialFetcher');
 const { performRealtimeBackup } = require('./backupManager');
 const { searchInvidiousVideos, resolveUrlOrPlaylist, resolveSingleVideo } = require('./invidiousHelper');
 
+// Global API Client Key & Authorization Gate
+// Prevents unauthorized URL inspection, direct scraping, and data leakage
+router.use((req, res, next) => {
+  if (req.method === 'OPTIONS') return next();
+
+  const appKey = req.headers['x-app-key'] ||
+                 req.headers['x-client-key'] ||
+                 req.headers['x-admin-key'] ||
+                 req.query.key || '';
+
+  const authHeader = req.headers['authorization'] || '';
+  const cleanAuth = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : authHeader.trim();
+
+  const validClientKeys = new Set([
+    'ep-client-v1-bharat-first-2024',
+    'JaiHindBharatMataKiJai2024!',
+    'Q0gng04bk3'
+  ]);
+
+  const isClientValid = validClientKeys.has(appKey) || validClientKeys.has(cleanAuth) ||
+    appKey.startsWith('ep-adm-') || cleanAuth.startsWith('ep-adm-') ||
+    ACTIVE_ADMIN_SESSIONS.has(appKey) || ACTIVE_ADMIN_SESSIONS.has(cleanAuth) ||
+    VALID_ADMIN_KEYS.has(appKey) || VALID_ADMIN_KEYS.has(cleanAuth);
+
+  if (!isClientValid) {
+    return res.status(401).json({
+      error: 'UNAUTHORIZED_API_ACCESS',
+      status: 401,
+      message: 'Direct manual access denied. A valid client key (X-App-Key header or ?key= param) is required to access Exposed Propagandus API services.'
+    });
+  }
+  next();
+});
+
 // Helper to clean handles / URLs
 function extractHandle(input, platform) {
   if (!input) return null;

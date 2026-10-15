@@ -42,8 +42,10 @@ import {
   Maximize2,
   Pause,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Heart
 } from 'lucide-react';
+import DonateModal from './DonateModal';
 
 // Disallowed & Protected Username Keywords (BJP politicians, Hindu deities, pro-influencers/admin keywords)
 const PROTECTED_USERNAMES_REGEX = /^(modi|narendra_modi|namo|bjp|amit_shah|yogi|adityanath|rss|ram|rama|shiva|shiv|krishna|hanuman|vishnu|ganesh|ganpati|mahadev|durga|kali|sita|radha|laxmi|lakshmi|saraswati|bholenath|shanker|shankar|bajrangbali|brahma|admin|official|owner|moderator|propagandus)/i;
@@ -448,6 +450,7 @@ export default function CommunityPage({ onSelectPage }) {
   const [isCreateChannelModalOpen, setIsCreateChannelModalOpen] = useState(false);
   const [isUserSearchModalOpen, setIsUserSearchModalOpen] = useState(false);
   const [isContactAdminOpen, setIsContactAdminOpen] = useState(false);
+  const [isDonateOpen, setIsDonateOpen] = useState(false);
   const [isChannelRequestsModalOpen, setIsChannelRequestsModalOpen] = useState(false);
   const [viewingUserProfile, setViewingUserProfile] = useState(null);
   const [mobileView, setMobileView] = useState('chat'); // 'chat' | 'list'
@@ -2059,8 +2062,18 @@ export default function CommunityPage({ onSelectPage }) {
           </div>
 
           {/* User Account & Actions Bar */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2">
             
+            {/* Donate / Support Button */}
+            <button
+              onClick={() => setIsDonateOpen(true)}
+              className="px-2.5 sm:px-3 py-1.5 bg-popYellow hover:bg-yellow-400 text-black border-2 border-black rounded-xl text-xs font-black uppercase shadow-[2px_2px_0px_#000] flex items-center gap-1.5 transition-all active:translate-y-0.5 shrink-0"
+              title="Support / Donate to the Developer Team"
+            >
+              <Heart className="w-3.5 h-3.5 text-popRed fill-popRed shrink-0" />
+              <span className="font-comic tracking-wider">DONATE</span>
+            </button>
+
             {/* User Search Button */}
             <button
               onClick={() => setIsUserSearchModalOpen(true)}
@@ -2137,10 +2150,10 @@ export default function CommunityPage({ onSelectPage }) {
       </header>
 
       {/* Main Community Workspace Layout (Enlarged PC Chat Proportions & Responsive Phone Mode) */}
-      <div className="max-w-[1800px] w-full mx-auto px-2 sm:px-4 lg:px-6 py-2 sm:py-3.5 flex-1 min-h-0 flex flex-col md:flex-row gap-3 lg:gap-4 overflow-hidden">
+      <div className="max-w-[1800px] w-full mx-auto px-2 sm:px-4 lg:px-6 py-2 sm:py-3.5 flex-1 min-h-0 h-full flex flex-col md:flex-row gap-3 lg:gap-4 overflow-hidden">
         
         {/* Left Sidebar: Channels & Navigation (Responsive for Mobile) */}
-        <aside className={`w-full md:w-72 lg:w-80 shrink-0 h-full flex flex-col gap-3 overflow-y-auto pr-1 pb-1 select-none no-scrollbar ${mobileView === 'chat' ? 'hidden md:flex' : 'flex'}`}>
+        <aside className={`w-full md:w-72 lg:w-80 shrink-0 h-full min-h-0 flex flex-col gap-3 overflow-y-auto pr-1 pb-1 select-none no-scrollbar ${mobileView === 'chat' ? 'hidden md:flex' : 'flex'}`}>
           
           {/* Public Chat Tab */}
           <div className="bg-white border-3 border-black rounded-2xl p-4 shadow-[4px_4px_0px_#000] space-y-3">
@@ -2410,34 +2423,29 @@ export default function CommunityPage({ onSelectPage }) {
                 <Home className="w-4 h-4 text-black" />
               </button>
 
-              <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-white border-2 border-black flex items-center justify-center font-black text-sm sm:text-base shrink-0">
-                {activeChatRoom === 'public' ? '📢' : activeDmUser ? '👤' : '🔒'}
-              </div>
-              <div className="min-w-0">
-                <div className="font-comic text-sm sm:text-base md:text-lg text-black leading-tight flex items-center gap-2 truncate">
-                  <span className="truncate">
-                    {activeChatRoom === 'public'
-                      ? 'PUBLIC CITIZEN FORUM'
-                      : activeDmUser
-                      ? `DIRECT CHAT: ${activeDmUser.name} (@${activeDmUser.username})`
-                      : activeChannelObj?.name || 'PRIVATE CHANNEL'}
-                  </span>
-                  {activeChannelObj && activeChannelObj.creator_id === currentUser?.id && (
-                    <button
-                      onClick={() => setIsChannelRequestsModalOpen(true)}
-                      className="px-2 py-0.5 bg-white border border-black rounded-lg text-[10px] font-black uppercase shadow-[1px_1px_0px_#000] shrink-0"
-                    >
-                      Admit ({activeChannelObj.pending_requests?.length || 0})
-                    </button>
-                  )}
-                </div>
-                <div className="text-[9px] sm:text-[10px] md:text-[11px] font-semibold text-gray-800 truncate">
+              <div className="font-comic text-sm sm:text-base md:text-lg text-black leading-tight flex items-center gap-2 truncate">
+                <span className="truncate">
                   {activeChatRoom === 'public'
-                    ? 'All registered patriotic voices welcome • Realtime sync'
+                    ? 'PUBLIC CITIZEN FORUM'
                     : activeDmUser
-                    ? 'End-to-end direct encrypted user session'
-                    : `Host: @${activeChannelObj?.creator_username || 'creator'} • Invite-only channel`}
-                </div>
+                    ? `DIRECT CHAT: ${activeDmUser.name} (@${activeDmUser.username})`
+                    : activeChannelObj?.name || 'PRIVATE CHANNEL'}
+                </span>
+                {activeChannelObj && activeChannelObj.creator_id === currentUser?.id && (
+                  <button
+                    onClick={() => setIsChannelRequestsModalOpen(true)}
+                    className="px-2 py-0.5 bg-white border border-black rounded-lg text-[10px] font-black uppercase shadow-[1px_1px_0px_#000] shrink-0"
+                  >
+                    Admit ({activeChannelObj.pending_requests?.length || 0})
+                  </button>
+                )}
+              </div>
+              <div className="text-[9px] sm:text-[10px] md:text-[11px] font-semibold text-gray-800 truncate">
+                {activeChatRoom === 'public'
+                  ? 'All registered patriotic voices welcome • Realtime sync'
+                  : activeDmUser
+                  ? 'End-to-end direct encrypted user session'
+                  : `Host: @${activeChannelObj?.creator_username || 'creator'} • Invite-only channel`}
               </div>
             </div>
 
@@ -4277,6 +4285,12 @@ export default function CommunityPage({ onSelectPage }) {
         </div>
       )}
 
-      </div>
-    );
-  }
+      {/* UPI Donation & Developer Support Poster Modal */}
+      <DonateModal
+        isOpen={isDonateOpen}
+        onClose={() => setIsDonateOpen(false)}
+      />
+
+    </div>
+  );
+}

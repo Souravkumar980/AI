@@ -13,6 +13,7 @@ import AdminPanel from './components/AdminPanel';
 import AdminAnnouncementBanner from './components/AdminAnnouncementBanner';
 import BulletinBanner from './components/BulletinBanner';
 import CommunityPage from './components/CommunityPage';
+import DonateModal from './components/DonateModal';
 import Footer from './components/Footer';
 import { MusicPlayerProvider } from './components/MusicPlayer';
 import confetti from 'canvas-confetti';
@@ -28,6 +29,24 @@ export default function App() {
   const [reportingEntity, setReportingEntity] = useState(null);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [reloadTrigger, setReloadTrigger] = useState(0);
+
+  // Donate / Support Modal (Auto-pops after 6 seconds on first visit, or manually via button)
+  const [isDonateOpen, setIsDonateOpen] = useState(false);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      try {
+        const alreadySeen = sessionStorage.getItem('ep_donate_seen');
+        if (!alreadySeen) {
+          setIsDonateOpen(true);
+          sessionStorage.setItem('ep_donate_seen', 'true');
+        }
+      } catch (e) {
+        setIsDonateOpen(true);
+      }
+    }, 6000);
+    return () => clearTimeout(timer);
+  }, []);
 
   // P2: Share Buster Modal
   const [isShareCardOpen, setIsShareCardOpen] = useState(false);
@@ -218,7 +237,7 @@ export default function App() {
 
   return (
     <MusicPlayerProvider>
-      <div className={`${currentPage === 'community' ? 'h-[100dvh] max-h-[100dvh] overflow-hidden' : 'min-h-screen'} flex flex-col bg-[#FDFBF7] text-black selection:bg-saffron selection:text-black overflow-x-hidden`}>
+      <div className={`${currentPage === 'community' ? 'h-[100dvh] max-h-[100dvh] min-h-[100dvh] overflow-hidden' : 'min-h-screen'} flex-1 flex flex-col bg-[#FDFBF7] text-black selection:bg-saffron selection:text-black overflow-x-hidden`}>
         {/* Live Admin Broadcast Banner across Visitors Screens */}
         <AdminAnnouncementBanner />
 
@@ -229,6 +248,7 @@ export default function App() {
             onSelectPage={handleSelectPage}
             onOpenSubmit={() => setIsSubmitOpen(true)}
             onOpenSuggest={() => setIsSuggestNatOpen(true)}
+            onOpenDonate={() => setIsDonateOpen(true)}
             stats={stats}
             onLogoClick={() => setReloadTrigger(prev => prev + 1)}
           />
@@ -286,6 +306,7 @@ export default function App() {
             onOpenSubmit={() => setIsSubmitOpen(true)}
             onOpenSuggest={() => setIsSuggestNatOpen(true)}
             onSelectPage={handleSelectPage}
+            onOpenDonate={() => setIsDonateOpen(true)}
           />
         )}
 
@@ -353,6 +374,12 @@ export default function App() {
         isOpen={isShareCardOpen}
         onClose={() => setIsShareCardOpen(false)}
         data={shareCardData}
+      />
+
+      {/* UPI Donation & Developer Support Poster Modal */}
+      <DonateModal
+        isOpen={isDonateOpen}
+        onClose={() => setIsDonateOpen(false)}
       />
     </div>
     </MusicPlayerProvider>

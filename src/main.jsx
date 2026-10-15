@@ -3,23 +3,44 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import './index.css';
 
-// Dynamic Cloudflare / Remote API Base URL Interceptor
+// Dynamic Cloudflare / Remote API Base URL Interceptor & App Key Protection
+export const EP_CLIENT_KEY = 'ep-client-v1-bharat-first-2024';
 const rawApiBase = (typeof window !== 'undefined' && window.__API_BASE_URL__) ||
   import.meta.env?.VITE_API_BASE_URL ||
   (typeof localStorage !== 'undefined' ? localStorage.getItem('ep_api_base_url') : '') ||
   '';
 const cleanApiBase = rawApiBase ? rawApiBase.replace(/\/$/, '') : '';
+
 if (typeof window !== 'undefined') {
   window.__API_BASE_URL__ = cleanApiBase;
-  if (cleanApiBase && window.fetch) {
+  window.__EP_CLIENT_KEY__ = EP_CLIENT_KEY;
+
+  if (window.fetch) {
     const originalFetch = window.fetch;
     window.fetch = function(input, init) {
-      if (typeof input === 'string' && input.startsWith('/api')) {
-        input = cleanApiBase + input;
-      } else if (input instanceof Request && input.url.startsWith('/api')) {
-        input = new Request(cleanApiBase + input.url, input);
+      let finalInput = input;
+      const finalInit = init ? { ...init } : {};
+
+      // Determine if this is an API call
+      let urlStr = '';
+      if (typeof input === 'string') {
+        urlStr = input;
+        if (cleanApiBase && urlStr.startsWith('/api')) {
+          finalInput = cleanApiBase + urlStr;
+        }
+      } else if (input instanceof Request) {
+        urlStr = input.url;
       }
-      return originalFetch.call(this, input, init);
+
+      if (urlStr.includes('/api')) {
+        const headers = new Headers(finalInit.headers || (input instanceof Request ? input.headers : {}));
+        if (!headers.has('X-App-Key')) {
+          headers.set('X-App-Key', EP_CLIENT_KEY);
+        }
+        finalInit.headers = headers;
+      }
+
+      return originalFetch.call(this, finalInput, finalInit);
     };
   }
 }

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import IndianFlagLogo from './IndianFlagLogo';
-import { Database, PlusCircle, Menu, X, Award, Sparkles, Play, Pause, ListMusic, Users } from 'lucide-react';
+import { Database, PlusCircle, Menu, X, Award, Sparkles, Play, Pause, ListMusic, Users, Heart } from 'lucide-react';
 import { useMusicPlayer } from './MusicPlayer';
 
 export default function Header({
@@ -8,6 +8,7 @@ export default function Header({
   onSelectPage,
   onOpenSubmit,
   onOpenSuggest,
+  onOpenDonate,
   stats,
   onLogoClick
 }) {
@@ -159,6 +160,16 @@ export default function Header({
 
         {/* Action Buttons (Desktop) */}
         <div className="hidden md:flex items-center gap-2 font-display">
+          {/* Donate / Support Button */}
+          <button
+            onClick={onOpenDonate}
+            className="bento-btn bg-popYellow hover:bg-yellow-400 text-black px-3 py-2 text-xs uppercase tracking-wider flex items-center gap-1.5 border-2 border-black shadow-[3px_3px_0px_#000] font-black"
+            title="Support / Donate to Developer Team"
+          >
+            <Heart className="w-4 h-4 text-popRed fill-popRed" />
+            <span>Donate</span>
+          </button>
+
           {activePage === 'nationalists' ? (
             <button
               onClick={onOpenSuggest}
@@ -180,6 +191,15 @@ export default function Header({
 
         {/* Mobile menu trigger */}
         <div className="flex items-center gap-1.5 md:hidden">
+          <button
+            onClick={onOpenDonate}
+            className="bento-btn bg-popYellow text-black px-2 py-1.5 text-[11px] uppercase flex items-center gap-1 font-black shadow-[2px_2px_0px_#000]"
+            title="Donate"
+          >
+            <Heart className="w-3.5 h-3.5 text-popRed fill-popRed" />
+            <span>Donate</span>
+          </button>
+
           {activePage === 'nationalists' ? (
             <button
               onClick={onOpenSuggest}
@@ -274,12 +294,12 @@ export default function Header({
           <button
             onClick={() => {
               setMobileMenuOpen(false);
-              onOpenSuggest();
+              if (onOpenDonate) onOpenDonate();
             }}
-            className="w-full text-left p-3 bg-white text-black border-2 border-black rounded-xl text-xs uppercase font-black flex items-center gap-2 shadow-[3px_3px_0px_#000]"
+            className="w-full text-left p-3 bg-popYellow text-black border-2 border-black rounded-xl text-xs uppercase font-black flex items-center gap-2 shadow-[3px_3px_0px_#000]"
           >
-            <Sparkles className="w-4 h-4 text-tirangaGreen" />
-            <span>Suggest a Nationalist Creator</span>
+            <Heart className="w-4 h-4 text-popRed fill-popRed" />
+            <span>Donate / Support Digital Bharat</span>
           </button>
         </div>
       )}
