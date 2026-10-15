@@ -996,18 +996,14 @@ export default function CommunityPage({ onSelectPage }) {
       }
 
       const defaultAvatar = `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(generatedUsername)}`;
-      const isAdmin = email === 'omkumar.working@gmail.com' && pass === 'Q0gng04bk3';
 
       const newUser = {
         id: 'usr_' + Date.now(),
         name,
         username: generatedUsername,
-        email,
-        phone,
-        password: pass,
         avatar_url: defaultAvatar,
-        verified_type: isAdmin ? 'influencer' : 'none',
-        is_admin: isAdmin,
+        verified_type: 'none',
+        is_admin: false,
         is_banned: 0,
         created_at: new Date().toISOString().split('T')[0]
       };
@@ -1141,42 +1137,8 @@ export default function CommunityPage({ onSelectPage }) {
       }
       return;
     } catch (err) {
-      // Local fallback
-      if (cred === 'omkumar.working@gmail.com' && pass === 'Q0gng04bk3') {
-        const adminUser = users.find(u => u.email.toLowerCase() === 'omkumar.working@gmail.com') || {
-          id: 'usr_admin',
-          name: 'Om Kumar (Commander)',
-          username: 'omkumar_admin',
-          email: 'omkumar.working@gmail.com',
-          phone: '9876543210',
-          avatar_url: 'https://api.dicebear.com/7.x/bottts/svg?seed=OmKumarAdmin',
-          verified_type: 'influencer',
-          is_admin: true,
-          created_at: '2025-01-01'
-        };
-        setCurrentUser(adminUser);
-        setIsAuthModalOpen(false);
-        alert('✓ Welcome Commander Om Kumar. Full administrative community control active.');
-        return;
-      }
-
-      const user = users.find(u => (u.email.toLowerCase() === cred || u.username.toLowerCase() === cred));
-      if (!user) {
-        setLoginError('No user found with this email or username.');
-        return;
-      }
-      if (user.is_banned) {
-        setLoginError('This account and IP address have been permanently banned due to platform security violations.');
-        return;
-      }
-      if (user.password !== pass) {
-        setLoginError('Incorrect password. Please try again.');
-        return;
-      }
-
-      setCurrentUser(user);
-      setIsAuthModalOpen(false);
-      setLoginForm({ emailOrUsername: '', password: '' });
+      setLoginError('Unable to connect to authentication server. Please check your network.');
+      return;
     }
   };
 
@@ -1938,15 +1900,18 @@ export default function CommunityPage({ onSelectPage }) {
       // Remove all their messages
       setMessages(messages.filter(m => m.user_id !== userId));
       broadcastCrossTab({ type: 'USER_BANNED', banned_user_id: userId, target_username: targetUsername });
+      const adminToken = localStorage.getItem('propagandus_admin_key') || '';
       try {
         await fetch('/api/community/admin/ban', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...(adminToken ? { 'x-admin-key': adminToken } : {})
+          },
           body: JSON.stringify({
             user_id: userId,
             target_username: targetUsername,
-            admin_email: 'omkumar.working@gmail.com',
-            admin_password: 'Q0gng04bk3'
+            admin_token: adminToken
           })
         });
       } catch {}
@@ -1959,15 +1924,18 @@ export default function CommunityPage({ onSelectPage }) {
     const current = users.find(u => u.id === userId)?.verified_type;
     const next = current === badgeType ? 'none' : badgeType;
     setUsers(users.map(u => u.id === userId ? { ...u, verified_type: next } : u));
+    const adminToken = localStorage.getItem('propagandus_admin_key') || '';
     try {
       await fetch('/api/community/admin/verify-badge', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(adminToken ? { 'x-admin-key': adminToken } : {})
+        },
         body: JSON.stringify({
           user_id: userId,
           badge_type: badgeType,
-          admin_email: 'omkumar.working@gmail.com',
-          admin_password: 'Q0gng04bk3'
+          admin_token: adminToken
         })
       });
     } catch {}
@@ -2012,7 +1980,7 @@ export default function CommunityPage({ onSelectPage }) {
   });
 
   return (
-    <div className="h-full w-full bg-[#FFFDF5] text-black font-sans flex flex-col overflow-hidden">
+    <div className="flex-1 min-h-0 h-full w-full bg-[#FFFDF5] text-black font-sans flex flex-col overflow-hidden">
       
       {/* Admin God-Mode Impersonation Sticky Banner */}
       {impersonationInfo && currentUser && (
@@ -2059,21 +2027,11 @@ export default function CommunityPage({ onSelectPage }) {
               <span className="font-comic tracking-wider">HOME</span>
             </button>
 
-            <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
-              <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-popYellow border-2 border-black flex items-center justify-center font-comic font-black text-sm sm:text-base shadow-[2px_2px_0px_#000] shrink-0">
-                💬
-              </div>
-              <div className="min-w-0">
-                <h1 className="font-comic text-base sm:text-xl md:text-2xl text-black leading-none flex items-center gap-1.5 sm:gap-2">
-                  <span>COMMUNITY</span>
-                  <span className="text-saffron-dark">CENTRAL</span>
-                  <IndianFlagLogo size="xs" />
-                </h1>
-                <p className="text-[9px] sm:text-[10px] md:text-[11px] font-bold text-gray-700 truncate hidden xs:block">
-                  Public Discussion • Sovereign Channels • Direct Encrypted Messages
-                </p>
-              </div>
-            </div>
+            <h1 className="font-comic text-sm sm:text-lg md:text-2xl text-black leading-none flex items-center gap-1 sm:gap-2 shrink-0">
+              <span>COMMUNITY</span>
+              <span className="text-saffron-dark hidden xs:inline">CENTRAL</span>
+              <IndianFlagLogo size="xs" />
+            </h1>
 
             {/* Quick Directory & Creators Nav Link Buttons */}
             {onSelectPage && (

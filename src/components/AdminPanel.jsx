@@ -259,7 +259,9 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
   // Realtime Community Moderation Live Sync (Every 2.5s & Cross-tab instant sync)
   const refreshCommunityData = async () => {
     try {
-      const commRes = await fetch('/api/community/sync');
+      const commRes = await fetch('/api/community/sync', {
+        headers: adminToken ? { 'x-admin-key': adminToken } : {}
+      });
       if (commRes.ok) {
         const commD = await commRes.json();
         const allQueries = commD.adminQueries || [];
@@ -555,7 +557,9 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
 
       // 16. Community Data & Influencer Verification Proofs
       try {
-        const commRes = await fetch('/api/community/sync');
+        const commRes = await fetch('/api/community/sync', {
+          headers: adminToken ? { 'x-admin-key': adminToken } : {}
+        });
         if (commRes.ok) {
           const commD = await commRes.json();
           const allQueries = commD.adminQueries || [];
@@ -579,12 +583,14 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
     try {
       const res = await fetch('/api/community/admin/verify-badge', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-key': adminToken
+        },
         body: JSON.stringify({
           user_id: userId,
           badge_type: badgeType,
-          admin_email: 'omkumar.working@gmail.com',
-          admin_password: 'Q0gng04bk3'
+          admin_token: adminToken
         })
       });
       if (res.ok) {
@@ -605,12 +611,14 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
     try {
       const res = await fetch('/api/community/admin/ban', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-key': adminToken
+        },
         body: JSON.stringify({
           user_id: userId,
           target_username: targetUsername,
-          admin_email: 'omkumar.working@gmail.com',
-          admin_password: 'Q0gng04bk3'
+          admin_token: adminToken
         })
       });
       if (res.ok) {
@@ -4210,7 +4218,7 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
                         </label>
                         <input
                           type="email"
-                          placeholder="e.g. omkumar.working@gmail.com"
+                          placeholder="e.g. example@gmail.com"
                           value={adminCredForm.new_email}
                           onChange={(e) => setAdminCredForm({ ...adminCredForm, new_email: e.target.value })}
                           className="w-full px-3 py-2 bg-gray-50 border-2 border-black rounded-xl font-mono text-xs font-bold focus:bg-white"
