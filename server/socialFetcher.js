@@ -227,8 +227,27 @@ async function fetchTwitterProfile(input) {
 
 // 3. Instagram Profile & Reach Fetcher (Extracts exact live Profile Pic & Followers)
 async function fetchInstagramProfile(input) {
-  let cleanHandle = input.trim();
-  const urlMatch = cleanHandle.match(/instagram\.com\/([a-zA-Z0-9_.]+)/i);
+  let cleanHandle = String(input || '').trim();
+  // Strip query parameters (?igsh=... etc) and hash fragments
+  cleanHandle = cleanHandle.split('?')[0].split('#')[0].replace(/\/+$/, '');
+
+  // Check if it is a post or reel link
+  const postMatch = cleanHandle.match(/(?:instagram\.com|instagr\.am)\/(?:reel|p|tv)\/([a-zA-Z0-9_-]+)/i);
+  if (postMatch) {
+    const postCode = postMatch[1];
+    const postEmbedUrl = `https://www.instagram.com/p/${postCode}/embed/`;
+    try {
+      const postHtml = await fetchRawHtml(postEmbedUrl, { 'User-Agent': 'Mozilla/5.0' });
+      const authorMatch = postHtml.match(/(?:instagram\.com|instagr\.am)\/([a-zA-Z0-9_.]+)\//i) ||
+                          postHtml.match(/"username":"([a-zA-Z0-9_.]+)"/i) ||
+                          postHtml.match(/@([a-zA-Z0-9_.]+)/i);
+      if (authorMatch && !['p', 'reel', 'tv', 'explore', 'stories', 'accounts'].includes(authorMatch[1].toLowerCase())) {
+        cleanHandle = authorMatch[1];
+      }
+    } catch (e) {}
+  }
+
+  const urlMatch = cleanHandle.match(/(?:instagram\.com|instagr\.am)\/([a-zA-Z0-9_.]+)/i);
   if (urlMatch) cleanHandle = urlMatch[1];
   cleanHandle = cleanHandle.replace(/^@/, '').replace(/\/+$/, '');
 
@@ -298,19 +317,31 @@ async function fetchInstagramProfile(input) {
 }
 
 // Master Unified Auto-Fetch Function
-async function autoFetchSocialProfile(inputUrl) {
+async function autoFetchSocialProfile(inputUrl, platformHint = 'auto') {
   if (!inputUrl || typeof inputUrl !== 'string') return null;
   const raw = inputUrl.trim();
+  const hint = String(platformHint || '').toLowerCase();
 
-  if (/youtube\.com|youtu\.be/i.test(raw)) {
+  if (/youtube\.com|youtu\.be/i.test(raw) || hint === 'youtube' || hint === 'yt') {
     return await fetchYoutubeProfile(raw);
-  } else if (/x\.com|twitter\.com/i.test(raw)) {
+  } else if (/x\.com|twitter\.com/i.test(raw) || hint === 'x' || hint === 'twitter') {
     return await fetchTwitterProfile(raw);
-  } else if (/instagram\.com/i.test(raw)) {
+  } else if (/instagram\.com|instagr\.am/i.test(raw) || hint === 'instagram' || hint === 'insta' || raw.startsWith('@')) {
     return await fetchInstagramProfile(raw);
   }
 
-  return null;
+  if (hint === 'insta' || hint === 'instagram') {
+    return await fetchInstagramProfile(raw);
+  }
+  if (hint === 'yt' || hint === 'youtube') {
+    return await fetchYoutubeProfile(raw);
+  }
+  if (hint === 'x' || hint === 'twitter') {
+    return await fetchTwitterProfile(raw);
+  }
+
+  // Fallback if handle without prefix
+  return await fetchInstagramProfile(raw);
 }
 
 module.exports = {

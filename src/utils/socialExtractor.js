@@ -10,7 +10,7 @@ export function detectPlatformFromUrl(inputUrl) {
   const lower = inputUrl.toLowerCase().trim();
   if (/youtube\.com|youtu\.be/i.test(lower)) return 'yt';
   if (/x\.com|twitter\.com/i.test(lower)) return 'x';
-  if (/instagram\.com/i.test(lower)) return 'insta';
+  if (/instagram\.com|instagr\.am/i.test(lower)) return 'insta';
   if (/facebook\.com|fb\.watch|fb\.me/i.test(lower)) return 'facebook';
   if (/linkedin\.com/i.test(lower)) return 'linkedin';
   if (/t\.me|telegram\.me/i.test(lower)) return 'telegram';
@@ -21,15 +21,23 @@ export function detectPlatformFromUrl(inputUrl) {
 export function cleanHandle(input, platform) {
   if (!input || typeof input !== 'string') return '';
   let str = input.trim();
-  str = str.replace(/^https?:\/\/(www\.)?/, '');
+  str = str.replace(/^https?:\/\/(www\.|m\.)?/, '');
   str = str.replace(/^(x|twitter)\.com\//, '');
   str = str.replace(/^youtube\.com\/(@|channel\/|c\/)?/, '');
   str = str.replace(/^youtu\.be\//, '');
-  str = str.replace(/^instagram\.com\//, '');
+  str = str.replace(/^(instagram\.com|instagr\.am)\//, '');
   str = str.replace(/^facebook\.com\//, '');
   str = str.replace(/^linkedin\.com\/(in|company)\//, '');
   str = str.replace(/^[#@]/, '');
-  str = str.split('/')[0].split('?')[0].split('&')[0];
+  str = str.split('?')[0].split('#')[0].split('&')[0];
+  const parts = str.split('/').filter(Boolean);
+  if (parts.length > 0) {
+    if (['p', 'reel', 'tv', 'stories'].includes(parts[0].toLowerCase()) && parts.length > 1) {
+      str = parts[1];
+    } else {
+      str = parts[0];
+    }
+  }
   return str.trim();
 }
 
@@ -57,7 +65,10 @@ export async function autoFetchSocialProfile(inputUrl, platformHint = 'auto') {
 
   if (platform === 'auto' || !platform) {
     platform = detectPlatformFromUrl(raw);
-    if (platform === 'other') platform = 'yt';
+    if (platform === 'other') {
+      if (raw.startsWith('@')) platform = 'insta';
+      else platform = 'yt';
+    }
   }
 
   const handle = cleanHandle(raw, platform);
@@ -74,10 +85,14 @@ export async function autoFetchSocialProfile(inputUrl, platformHint = 'auto') {
     if (!targetUrl.startsWith('http')) {
       if (platform === 'yt') targetUrl = `https://www.youtube.com/@${handle}`;
       else if (platform === 'x') targetUrl = `https://x.com/${handle}`;
-      else if (platform === 'insta') targetUrl = `https://www.instagram.com/${handle}`;
+      else if (platform === 'insta' || platform === 'instagram') targetUrl = `https://www.instagram.com/${handle}`;
     }
 
-    const res = await fetch('/api/fetch-profile', {
+    const apiUrl = (typeof window !== 'undefined' && window.__API_BASE_URL__)
+      ? `${window.__API_BASE_URL__.replace(/\/+$/, '')}/api/fetch-profile`
+      : '/api/fetch-profile';
+
+    const res = await fetch(apiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url: targetUrl, platform }),

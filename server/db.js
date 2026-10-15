@@ -285,6 +285,10 @@ db.exec(`
 
 try { db.prepare("ALTER TABLE community_messages ADD COLUMN reactions TEXT DEFAULT '{}'").run(); } catch(e) {}
 try { db.prepare("ALTER TABLE community_messages ADD COLUMN reply_to TEXT DEFAULT NULL").run(); } catch(e) {}
+try { db.prepare("ALTER TABLE community_notifications ADD COLUMN type TEXT DEFAULT 'mention'").run(); } catch(e) {}
+try { db.prepare("ALTER TABLE community_notifications ADD COLUMN channel_id TEXT DEFAULT NULL").run(); } catch(e) {}
+try { db.prepare("ALTER TABLE community_notifications ADD COLUMN requester_id TEXT DEFAULT NULL").run(); } catch(e) {}
+try { db.prepare("ALTER TABLE community_notifications ADD COLUMN dm_user_id TEXT DEFAULT NULL").run(); } catch(e) {}
 
 // Seed default Admin in community_users
 try {

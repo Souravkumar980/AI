@@ -695,10 +695,23 @@ export default function CommunityPage({ onSelectPage }) {
 
   const [isBannedByIp, setIsBannedByIp] = useState(false);
 
+  // Helper to broadcast realtime events across tabs in the same browser (0ms latency)
+  const broadcastCrossTab = (payload) => {
+    try {
+      const bc = new BroadcastChannel('ep_community_realtime');
+      bc.postMessage(payload);
+      bc.close();
+    } catch (e) {}
+  };
+
   // Sync state with backend database
   const fetchCommunitySync = async () => {
     try {
-      const res = await fetch('/api/community/sync');
+      const apiUrl = (typeof window !== 'undefined' && window.__API_BASE_URL__)
+        ? `${window.__API_BASE_URL__.replace(/\/+$/, '')}/api/community/sync`
+        : '/api/community/sync';
+
+      const res = await fetch(apiUrl);
       if (res.ok) {
         const data = await res.json();
         if (data.users && Array.isArray(data.users)) {
@@ -706,25 +719,30 @@ export default function CommunityPage({ onSelectPage }) {
         }
         if (data.messages && Array.isArray(data.messages)) {
           setMessages(prev => {
-            // Check if messages actually changed to prevent pointless React re-renders
-            if (prev.length === data.messages.length) {
-              const lastPrev = prev[prev.length - 1];
-              const lastNew = data.messages[data.messages.length - 1];
-              if (lastPrev?.id === lastNew?.id && JSON.stringify(lastPrev?.reactions) === JSON.stringify(lastNew?.reactions)) {
-                return prev;
-              }
-            }
-            return data.messages;
+            // Check if messages count or any reactions/content actually changed
+            if (prev.length !== data.messages.length) return data.messages;
+            const prevHash = prev.map(m => `${m.id}_${JSON.stringify(m.reactions || {})}_${m.content}_${m.is_deleted}`).join('|');
+            const newHash = data.messages.map(m => `${m.id}_${JSON.stringify(m.reactions || {})}_${m.content}_${m.is_deleted}`).join('|');
+            if (prevHash !== newHash) return data.messages;
+            return prev;
           });
         }
         if (data.channels && Array.isArray(data.channels)) {
           setChannels(prev => {
-            if (JSON.stringify(prev.map(c => c.id)) === JSON.stringify(data.channels.map(c => c.id))) return prev;
-            return data.channels;
+            const prevStr = JSON.stringify(prev.map(c => ({ id: c.id, reqs: c.pending_requests?.length, mems: c.members?.length })));
+            const newStr = JSON.stringify(data.channels.map(c => ({ id: c.id, reqs: c.pending_requests?.length, mems: c.members?.length })));
+            if (prevStr !== newStr) return data.channels;
+            return prev;
           });
         }
         if (data.notifications && Array.isArray(data.notifications)) {
-          setNotifications(prev => prev.length !== data.notifications.length ? data.notifications : prev);
+          setNotifications(prev => {
+            if (prev.length !== data.notifications.length) return data.notifications;
+            const prevIds = prev.map(n => n.id).join(',');
+            const newIds = data.notifications.map(n => n.id).join(',');
+            if (prevIds !== newIds) return data.notifications;
+            return prev;
+          });
         }
         if (data.adminQueries && Array.isArray(data.adminQueries)) {
           setAdminQueries(prev => prev.length !== data.adminQueries.length ? data.adminQueries : prev);
@@ -737,10 +755,41 @@ export default function CommunityPage({ onSelectPage }) {
     }
   };
 
-  // Real-Time Live SSE Stream with 1.5s Fast Polling Fallback
+  // Real-Time Live SSE Stream + BroadcastChannel (Cross-Tab Instant 0ms Sync) + Fast Polling Fallback
   useEffect(() => {
     let eventSource = null;
+    let bc = null;
 
+    // 1. Cross-Tab Real-time BroadcastChannel (Same browser multi-user / multi-tab)
+    try {
+      bc = new BroadcastChannel('ep_community_realtime');
+      bc.onmessage = (event) => {
+        try {
+          const data = event.data;
+          if (data.type === 'NEW_MESSAGE' && data.message) {
+            setMessages(prev => {
+              if (prev.some(m => m.id === data.message.id)) return prev;
+              return [...prev, data.message];
+            });
+            scrollMessagesToBottom('smooth');
+          } else if (data.type === 'REACTION_UPDATE') {
+            setMessages(prev => prev.map(m => m.id === data.message_id ? { ...m, reactions: data.reactions } : m));
+          } else if (data.type === 'DELETE_MESSAGE') {
+            setMessages(prev => prev.filter(m => m.id !== data.message_id));
+          } else if (data.type === 'NEW_NOTIFICATION' && data.notification) {
+            setNotifications(prev => {
+              if (prev.some(n => n.id === data.notification.id)) return prev;
+              return [data.notification, ...prev];
+            });
+            fetchCommunitySync();
+          } else if (data.type === 'CHANNEL_UPDATE' || data.type === 'USER_BANNED' || data.type === 'BADGE_UPDATE' || data.type === 'SYNC_NOW') {
+            fetchCommunitySync();
+          }
+        } catch (e) {}
+      };
+    } catch (e) {}
+
+    // 2. Server-Sent Events (SSE) Stream (Cross-Device / Cross-Network instant push)
     const connectSse = () => {
       try {
         const streamUrl = (window.__API_BASE_URL__ || '') + '/api/community/stream';
@@ -759,7 +808,13 @@ export default function CommunityPage({ onSelectPage }) {
               setMessages(prev => prev.map(m => m.id === data.message_id ? { ...m, reactions: data.reactions } : m));
             } else if (data.type === 'DELETE_MESSAGE') {
               setMessages(prev => prev.filter(m => m.id !== data.message_id));
-            } else if (data.type === 'CHANNEL_UPDATE' || data.type === 'USER_BANNED') {
+            } else if (data.type === 'NEW_NOTIFICATION' && data.notification) {
+              setNotifications(prev => {
+                if (prev.some(n => n.id === data.notification.id)) return prev;
+                return [data.notification, ...prev];
+              });
+              fetchCommunitySync();
+            } else if (data.type === 'CHANNEL_UPDATE' || data.type === 'USER_BANNED' || data.type === 'BADGE_UPDATE') {
               fetchCommunitySync();
             }
           } catch (e) {}
@@ -770,7 +825,6 @@ export default function CommunityPage({ onSelectPage }) {
             eventSource.close();
             eventSource = null;
           }
-          // Reconnect after 3s
           setTimeout(connectSse, 3000);
         };
       } catch (e) {}
@@ -778,7 +832,7 @@ export default function CommunityPage({ onSelectPage }) {
 
     connectSse();
 
-    // Fast polling fallback: 1.5s interval ensures near-instant sync on any host
+    // 3. Fast polling fallback: 1.5s interval ensures near-instant sync across any hosting environment
     fetchCommunitySync();
     const interval = setInterval(fetchCommunitySync, 1500);
 
@@ -792,6 +846,7 @@ export default function CommunityPage({ onSelectPage }) {
 
     return () => {
       if (eventSource) eventSource.close();
+      if (bc) bc.close();
       clearInterval(interval);
       document.removeEventListener('visibilitychange', handleVisibility);
       window.removeEventListener('focus', handleFocus);
@@ -1245,13 +1300,18 @@ export default function CommunityPage({ onSelectPage }) {
     };
 
     setMessages(prev => [...prev, newMessage]);
+    broadcastCrossTab({ type: 'NEW_MESSAGE', message: newMessage });
     setInputText('');
     setAttachedFiles([]);
     setTagSuggestion(null);
     setReplyTarget(null);
 
     try {
-      const res = await fetch('/api/community/messages', {
+      const apiUrl = (typeof window !== 'undefined' && window.__API_BASE_URL__)
+        ? `${window.__API_BASE_URL__.replace(/\/+$/, '')}/api/community/messages`
+        : '/api/community/messages';
+
+      const res = await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newMessage)
@@ -1260,6 +1320,7 @@ export default function CommunityPage({ onSelectPage }) {
         const data = await res.json();
         if (data.message) {
           setMessages(prev => prev.map(m => m.id === newMessage.id ? data.message : m));
+          broadcastCrossTab({ type: 'NEW_MESSAGE', message: data.message });
         }
       }
     } catch {}
@@ -1306,11 +1367,16 @@ export default function CommunityPage({ onSelectPage }) {
     }
 
     setMessages(prev => [...prev, newMessage]);
+    broadcastCrossTab({ type: 'NEW_MESSAGE', message: newMessage });
     setShowGifPicker(false);
     setReplyTarget(null);
 
     try {
-      const res = await fetch('/api/community/messages', {
+      const apiUrl = (typeof window !== 'undefined' && window.__API_BASE_URL__)
+        ? `${window.__API_BASE_URL__.replace(/\/+$/, '')}/api/community/messages`
+        : '/api/community/messages';
+
+      const res = await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newMessage)
@@ -1319,6 +1385,7 @@ export default function CommunityPage({ onSelectPage }) {
         const data = await res.json();
         if (data.message) {
           setMessages(prev => prev.map(m => m.id === newMessage.id ? data.message : m));
+          broadcastCrossTab({ type: 'NEW_MESSAGE', message: data.message });
         }
       }
     } catch {}
@@ -1332,6 +1399,8 @@ export default function CommunityPage({ onSelectPage }) {
       setIsAuthModalOpen(true);
       return;
     }
+
+    let updatedRx = {};
 
     // Optimistic local update
     setMessages(prev => prev.map(m => {
@@ -1351,11 +1420,18 @@ export default function CommunityPage({ onSelectPage }) {
         rx[emoji].push({ user_id: currentUser.id, username: currentUser.username });
       }
 
+      updatedRx = rx;
       return { ...m, reactions: rx };
     }));
 
+    broadcastCrossTab({ type: 'REACTION_UPDATE', message_id: messageId, reactions: updatedRx });
+
     try {
-      await fetch('/api/community/messages/react', {
+      const apiUrl = (typeof window !== 'undefined' && window.__API_BASE_URL__)
+        ? `${window.__API_BASE_URL__.replace(/\/+$/, '')}/api/community/messages/react`
+        : '/api/community/messages/react';
+
+      await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1482,7 +1558,11 @@ export default function CommunityPage({ onSelectPage }) {
     setActiveChannelObj(newChan);
 
     try {
-      const res = await fetch('/api/community/channels', {
+      const apiUrl = (typeof window !== 'undefined' && window.__API_BASE_URL__)
+        ? `${window.__API_BASE_URL__.replace(/\/+$/, '')}/api/community/channels`
+        : '/api/community/channels';
+
+      const res = await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newChan)
@@ -1491,6 +1571,7 @@ export default function CommunityPage({ onSelectPage }) {
         const data = await res.json();
         if (data.channel) {
           setChannels(prev => prev.map(c => c.id === newChan.id ? data.channel : c));
+          broadcastCrossTab({ type: 'CHANNEL_UPDATE', channel_id: newChan.id });
         }
       }
     } catch {}
@@ -1561,10 +1642,17 @@ export default function CommunityPage({ onSelectPage }) {
         created_at: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       };
       setNotifications(prev => [notifReq, ...prev]);
+      broadcastCrossTab({ type: 'NEW_NOTIFICATION', notification: notifReq });
     }
 
+    broadcastCrossTab({ type: 'CHANNEL_UPDATE', channel_id: chanId });
+
     try {
-      await fetch('/api/community/channels/request', {
+      const apiUrl = (typeof window !== 'undefined' && window.__API_BASE_URL__)
+        ? `${window.__API_BASE_URL__.replace(/\/+$/, '')}/api/community/channels/request`
+        : '/api/community/channels/request';
+
+      await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1594,8 +1682,14 @@ export default function CommunityPage({ onSelectPage }) {
       setNotifications(prev => prev.map(n => n.id === notifId ? { ...n, resolved: true, resolvedAction: 'admitted' } : n));
     }
 
+    broadcastCrossTab({ type: 'CHANNEL_UPDATE', channel_id: chanId });
+
     try {
-      await fetch('/api/community/channels/admit', {
+      const apiUrl = (typeof window !== 'undefined' && window.__API_BASE_URL__)
+        ? `${window.__API_BASE_URL__.replace(/\/+$/, '')}/api/community/channels/admit`
+        : '/api/community/channels/admit';
+
+      await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ channel_id: chanId, participant_user_id: participantUserId })
@@ -1617,8 +1711,14 @@ export default function CommunityPage({ onSelectPage }) {
       setNotifications(prev => prev.map(n => n.id === notifId ? { ...n, resolved: true, resolvedAction: 'discarded' } : n));
     }
 
+    broadcastCrossTab({ type: 'CHANNEL_UPDATE', channel_id: chanId });
+
     try {
-      await fetch('/api/community/channels/deny', {
+      const apiUrl = (typeof window !== 'undefined' && window.__API_BASE_URL__)
+        ? `${window.__API_BASE_URL__.replace(/\/+$/, '')}/api/community/channels/deny`
+        : '/api/community/channels/deny';
+
+      await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ channel_id: chanId, participant_user_id: participantUserId })
@@ -1720,8 +1820,12 @@ export default function CommunityPage({ onSelectPage }) {
     if (!currentUser?.is_admin) return;
     if (confirm('Delete this message permanently from the platform?')) {
       setMessages(messages.filter(m => m.id !== msgId));
+      broadcastCrossTab({ type: 'DELETE_MESSAGE', message_id: msgId });
       try {
-        await fetch(`/api/community/messages/${msgId}`, { method: 'DELETE' });
+        const apiUrl = (typeof window !== 'undefined' && window.__API_BASE_URL__)
+          ? `${window.__API_BASE_URL__.replace(/\/+$/, '')}/api/community/messages/${msgId}`
+          : `/api/community/messages/${msgId}`;
+        await fetch(apiUrl, { method: 'DELETE' });
       } catch {}
     }
   };
@@ -1733,6 +1837,7 @@ export default function CommunityPage({ onSelectPage }) {
       setUsers(users.map(u => u.id === userId ? { ...u, is_banned: 1 } : u));
       // Remove all their messages
       setMessages(messages.filter(m => m.user_id !== userId));
+      broadcastCrossTab({ type: 'USER_BANNED', banned_user_id: userId, target_username: targetUsername });
       try {
         await fetch('/api/community/admin/ban', {
           method: 'POST',

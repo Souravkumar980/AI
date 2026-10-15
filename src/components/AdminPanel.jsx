@@ -157,9 +157,12 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
     users: [],
     messages: [],
     channels: [],
-    adminQueries: []
+    adminQueries: [],
+    influencerQueries: [],
+    contactQueries: []
   });
   const [commSearch, setCommSearch] = useState('');
+  const [userSearchTerm, setUserSearchTerm] = useState('');
   const [commSection, setCommSection] = useState('queries'); // 'queries', 'users', 'channels'
 
   // The Govt: 2029 Mega Poll State
@@ -252,6 +255,44 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
       return () => clearInterval(interval);
     }
   }, [isOpen, isAuthenticated, adminToken]);
+
+  // Realtime Community Moderation Live Sync (Every 2.5s & Cross-tab instant sync)
+  const refreshCommunityData = async () => {
+    try {
+      const commRes = await fetch('/api/community/sync');
+      if (commRes.ok) {
+        const commD = await commRes.json();
+        const allQueries = commD.adminQueries || [];
+        const influencerQueries = commD.influencerQueries || allQueries.filter(q => q.type === 'creator');
+        const contactQueries = commD.contactQueries || allQueries.filter(q => q.type !== 'creator');
+        setCommunityData(prev => ({
+          ...prev,
+          ...commD,
+          influencerQueries,
+          contactQueries
+        }));
+      }
+    } catch (e) {}
+  };
+
+  useEffect(() => {
+    if (isOpen && isAuthenticated) {
+      refreshCommunityData();
+      const commInterval = setInterval(refreshCommunityData, 2500);
+      let bc = null;
+      try {
+        bc = new BroadcastChannel('ep_community_realtime');
+        bc.onmessage = () => {
+          refreshCommunityData();
+        };
+      } catch (e) {}
+
+      return () => {
+        clearInterval(commInterval);
+        if (bc) bc.close();
+      };
+    }
+  }, [isOpen, isAuthenticated]);
 
   const fetchLiveTraffic = async () => {
     if (!adminToken) return;
@@ -517,7 +558,14 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
         const commRes = await fetch('/api/community/sync');
         if (commRes.ok) {
           const commD = await commRes.json();
-          setCommunityData(commD);
+          const allQueries = commD.adminQueries || [];
+          const influencerQueries = commD.influencerQueries || allQueries.filter(q => q.type === 'creator');
+          const contactQueries = commD.contactQueries || allQueries.filter(q => q.type !== 'creator');
+          setCommunityData({
+            ...commD,
+            influencerQueries,
+            contactQueries
+          });
         }
       } catch (e) {}
     } catch (e) {
@@ -4480,8 +4528,27 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
                       <div>
                         <h4 className="font-comic text-lg text-black">COMMUNITY USER DIRECTORY &amp; BADGE ASSIGNMENT</h4>
                         <p className="text-[11px] text-gray-500 font-display">
-                          Assign Golden Tick, Blue Tick, or No Badge. New user registrations have NO badge by default.
+                          Assign Golden Tick, Blue Tick, or No Badge. Search by name, @username, or email to find and moderate or ban any user.
                         </p>
+                      </div>
+                      <div className="relative min-w-[240px] sm:min-w-[280px]">
+                        <input
+                          type="text"
+                          placeholder="Search name, @username, email..."
+                          value={userSearchTerm}
+                          onChange={(e) => setUserSearchTerm(e.target.value)}
+                          className="w-full px-3 py-1.5 pl-8 border-2 border-black rounded-xl text-xs font-bold outline-none focus:bg-yellow-50 shadow-[2px_2px_0px_#000]"
+                        />
+                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs">🔍</span>
+                        {userSearchTerm && (
+                          <button
+                            type="button"
+                            onClick={() => setUserSearchTerm('')}
+                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-black text-xs font-black"
+                          >
+                            ✕
+                          </button>
+                        )}
                       </div>
                     </div>
 
@@ -4497,14 +4564,29 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-200 font-display">
-                          {(!communityData?.users || communityData.users.length === 0) ? (
-                            <tr>
-                              <td colSpan="5" className="p-4 text-center text-gray-500">
-                                No registered community users found.
-                              </td>
-                            </tr>
-                          ) : (
-                            communityData.users.map((u) => (
+                          {(() => {
+                            const filteredUsers = (communityData?.users || []).filter(u => {
+                              if (!userSearchTerm) return true;
+                              const term = userSearchTerm.toLowerCase().trim().replace(/^@/, '');
+                              return (
+                                (u.name || '').toLowerCase().includes(term) ||
+                                (u.username || '').toLowerCase().includes(term) ||
+                                (u.email || '').toLowerCase().includes(term) ||
+                                (u.phone || '').toLowerCase().includes(term)
+                              );
+                            });
+
+                            if (filteredUsers.length === 0) {
+                              return (
+                                <tr>
+                                  <td colSpan="5" className="p-4 text-center text-gray-500 font-bold">
+                                    {userSearchTerm ? `No community users matching "${userSearchTerm}".` : 'No registered community users found.'}
+                                  </td>
+                                </tr>
+                              );
+                            }
+
+                            return filteredUsers.map((u) => (
                               <tr key={u.id} className="hover:bg-gray-50/80">
                                 <td className="p-2.5">
                                   <div className="flex items-center gap-2.5">
@@ -4613,8 +4695,8 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
                                   )}
                                 </td>
                               </tr>
-                            ))
-                          )}
+                            ));
+                          })()}
                         </tbody>
                       </table>
                     </div>

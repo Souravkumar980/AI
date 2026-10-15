@@ -106,10 +106,10 @@ function validateSocialHandles(cleanX, cleanYt, cleanInsta, tableName, excludeId
 // Auto-fetch real profile name and avatar from social URL
 router.post('/fetch-profile', async (req, res) => {
   try {
-    const { url } = req.body;
+    const { url, platform } = req.body;
     if (!url) return res.status(400).json({ error: 'URL is required' });
 
-    const profile = await autoFetchSocialProfile(url);
+    const profile = await autoFetchSocialProfile(url, platform);
     if (!profile) {
       return res.status(404).json({ error: 'Could not extract profile info from this URL' });
     }
@@ -2274,6 +2274,9 @@ const broadcastCommunityEvent = (eventData) => {
   for (const client of sseClients) {
     try {
       client.write(payload);
+      if (typeof client.flush === 'function') {
+        client.flush();
+      }
     } catch (e) {
       sseClients.delete(client);
     }
@@ -2289,18 +2292,25 @@ router.get('/community/stream', (req, res) => {
     'X-Accel-Buffering': 'no',
     'Access-Control-Allow-Origin': '*'
   });
+  if (typeof res.flushHeaders === 'function') {
+    res.flushHeaders();
+  }
   res.write(`data: ${JSON.stringify({ type: 'CONNECTED', timestamp: Date.now() })}\n\n`);
+  if (typeof res.flush === 'function') {
+    res.flush();
+  }
 
   sseClients.add(res);
 
   const heartbeat = setInterval(() => {
     try {
       res.write(': heartbeat\n\n');
+      if (typeof res.flush === 'function') res.flush();
     } catch (e) {
       clearInterval(heartbeat);
       sseClients.delete(res);
     }
-  }, 20000);
+  }, 15000);
 
   req.on('close', () => {
     clearInterval(heartbeat);
@@ -2323,13 +2333,16 @@ router.get('/community/sync', (req, res) => {
       ORDER BY created_at DESC
     `).all();
 
-    const messages = db.prepare(`
+    // Fetch the 200 most recent messages, ordered oldest to newest for chronological chat
+    const rawMessages = db.prepare(`
       SELECT id, channel_id, user_id, user_name, username, user_avatar, verified_type, content, attachments, media_links, gif_url, reactions, reply_to, is_deleted, created_at
       FROM community_messages
       WHERE is_deleted = 0
-      ORDER BY rowid ASC
+      ORDER BY rowid DESC
       LIMIT 200
-    `).all().map(m => ({
+    `).all();
+
+    const messages = rawMessages.reverse().map(m => ({
       ...m,
       attachments: m.attachments ? JSON.parse(m.attachments) : [],
       media_links: m.media_links ? JSON.parse(m.media_links) : [],
@@ -2348,7 +2361,7 @@ router.get('/community/sync', (req, res) => {
     }));
 
     const notifications = db.prepare(`
-      SELECT id, recipient_username, sender_username, sender_name, message, is_read, created_at
+      SELECT id, recipient_username, sender_username, sender_name, message, is_read, type, channel_id, requester_id, dm_user_id, created_at
       FROM community_notifications
       ORDER BY rowid DESC
       LIMIT 100
@@ -2361,6 +2374,9 @@ router.get('/community/sync', (req, res) => {
       LIMIT 100
     `).all();
 
+    const influencerQueries = adminQueries.filter(q => q.type === 'creator');
+    const contactQueries = adminQueries.filter(q => q.type !== 'creator');
+
     res.json({
       success: true,
       clientIp,
@@ -2368,7 +2384,9 @@ router.get('/community/sync', (req, res) => {
       messages,
       channels,
       notifications,
-      adminQueries
+      adminQueries,
+      influencerQueries,
+      contactQueries
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -2640,12 +2658,61 @@ router.post('/community/messages', (req, res) => {
       for (const targetUname of mentionedUsernames) {
         if (targetUname !== (username || '').toLowerCase()) {
           const notifId = 'notif_' + Date.now() + Math.random().toString(36).substr(2, 4);
+          const notifMsg = `@${username} mentioned you: "${content.slice(0, 60)}..."`;
           db.prepare(`
-            INSERT INTO community_notifications (id, recipient_username, sender_username, sender_name, message, is_read, created_at)
-            VALUES (?, ?, ?, ?, ?, 0, ?)
-          `).run(notifId, targetUname, username || 'user', user_name || 'Citizen', `@${username} mentioned you: "${content.slice(0, 60)}..."`, now);
+            INSERT INTO community_notifications (id, recipient_username, sender_username, sender_name, message, is_read, type, created_at)
+            VALUES (?, ?, ?, ?, ?, 0, 'mention', ?)
+          `).run(notifId, targetUname, username || 'user', user_name || 'Citizen', notifMsg, now);
+
+          broadcastCommunityEvent({
+            type: 'NEW_NOTIFICATION',
+            notification: {
+              id: notifId,
+              recipient_username: targetUname,
+              sender_username: username || 'user',
+              sender_name: user_name || 'Citizen',
+              message: notifMsg,
+              type: 'mention',
+              created_at: now
+            }
+          });
         }
       }
+    }
+
+    // Handle DM direct notifications
+    let dmRecipientUname = req.body.recipient_username ? String(req.body.recipient_username).toLowerCase() : null;
+    if (!dmRecipientUname && channel_id && String(channel_id).startsWith('dm_')) {
+      const parts = String(channel_id).replace('dm_', '').split('_');
+      const otherId = parts.find(id => id !== user_id);
+      if (otherId) {
+        const otherUser = db.prepare('SELECT username FROM community_users WHERE id = ?').get(otherId);
+        if (otherUser) dmRecipientUname = otherUser.username.toLowerCase();
+      }
+    }
+
+    if (dmRecipientUname && dmRecipientUname !== (username || '').toLowerCase()) {
+      const notifId = 'notif_dm_' + Date.now() + Math.random().toString(36).substr(2, 4);
+      const notifSnippet = (content || (attachments && attachments.length > 0 ? 'Sent attachment' : 'Sent media')).slice(0, 60);
+      const dmMsg = `@${username} sent you a direct message: "${notifSnippet}"`;
+      db.prepare(`
+        INSERT INTO community_notifications (id, recipient_username, sender_username, sender_name, message, is_read, type, dm_user_id, created_at)
+        VALUES (?, ?, ?, ?, ?, 0, 'direct_message', ?, ?)
+      `).run(notifId, dmRecipientUname, username || 'user', user_name || 'Citizen', dmMsg, user_id, now);
+
+      broadcastCommunityEvent({
+        type: 'NEW_NOTIFICATION',
+        notification: {
+          id: notifId,
+          recipient_username: dmRecipientUname,
+          sender_username: username || 'user',
+          sender_name: user_name || 'Citizen',
+          message: dmMsg,
+          type: 'direct_message',
+          dm_user_id: user_id,
+          created_at: now
+        }
+      });
     }
 
     db.prepare(`
@@ -2822,26 +2889,59 @@ router.post('/community/channels', (req, res) => {
 });
 
 // 8. Request to join Channel (Google Meet style)
-router.post('/community/channels/:id/request', (req, res) => {
+router.post(['/community/channels/request', '/community/channels/:id/request'], (req, res) => {
   try {
-    const chanId = req.params.id;
+    const chanId = req.params.id || req.body.channel_id || req.body.id;
     const { user_id, name, username, avatar_url } = req.body;
-    if (!user_id) return res.status(400).json({ error: 'User ID required.' });
+    if (!user_id || !chanId) return res.status(400).json({ error: 'User ID and Channel ID required.' });
 
     const chan = db.prepare('SELECT * FROM community_channels WHERE id = ?').get(chanId);
     if (!chan) return res.status(404).json({ error: 'Channel not found.' });
 
     const requests = chan.pending_requests ? JSON.parse(chan.pending_requests) : [];
+    const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
     if (!requests.some(r => r.user_id === user_id)) {
       requests.push({
         user_id,
         name: name || 'Citizen',
         username: username || 'user',
         avatar_url: avatar_url || null,
-        requested_at: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        requested_at: nowTime
       });
       db.prepare('UPDATE community_channels SET pending_requests = ? WHERE id = ?').run(JSON.stringify(requests), chanId);
     }
+
+    // Insert persistent notification for the channel creator
+    const notifId = 'notif_chan_' + Date.now() + Math.random().toString(36).substr(2, 4);
+    const notifMsg = `@${username || 'user'} (${name || 'Citizen'}) requested to participate in your private channel "${chan.name}"`;
+    const creatorUname = String(chan.creator_username || '').toLowerCase();
+    
+    db.prepare(`
+      INSERT INTO community_notifications (id, recipient_username, sender_username, sender_name, message, is_read, type, channel_id, requester_id, created_at)
+      VALUES (?, ?, ?, ?, ?, 0, 'channel_request', ?, ?, ?)
+    `).run(notifId, creatorUname, username || 'user', name || 'Citizen', notifMsg, chanId, user_id, nowTime);
+
+    broadcastCommunityEvent({
+      type: 'CHANNEL_UPDATE',
+      channel_id: chanId,
+      pending_requests: requests
+    });
+
+    broadcastCommunityEvent({
+      type: 'NEW_NOTIFICATION',
+      notification: {
+        id: notifId,
+        recipient_username: creatorUname,
+        sender_username: username || 'user',
+        sender_name: name || 'Citizen',
+        message: notifMsg,
+        type: 'channel_request',
+        channel_id: chanId,
+        requester_id: user_id,
+        created_at: nowTime
+      }
+    });
 
     res.json({ success: true, requests });
   } catch (error) {
@@ -2850,10 +2950,12 @@ router.post('/community/channels/:id/request', (req, res) => {
 });
 
 // 9. Admit Participant to Channel
-router.post('/community/channels/:id/admit', (req, res) => {
+router.post(['/community/channels/admit', '/community/channels/:id/admit'], (req, res) => {
   try {
-    const chanId = req.params.id;
+    const chanId = req.params.id || req.body.channel_id || req.body.id;
     const { participant_user_id } = req.body;
+    if (!chanId || !participant_user_id) return res.status(400).json({ error: 'Channel ID and Participant User ID required.' });
+
     const chan = db.prepare('SELECT * FROM community_channels WHERE id = ?').get(chanId);
     if (!chan) return res.status(404).json({ error: 'Channel not found.' });
 
@@ -2868,6 +2970,39 @@ router.post('/community/channels/:id/admit', (req, res) => {
     db.prepare('UPDATE community_channels SET members = ?, pending_requests = ? WHERE id = ?')
       .run(JSON.stringify(members), JSON.stringify(requests), chanId);
 
+    // Notify the admitted user
+    const targetUser = db.prepare('SELECT username FROM community_users WHERE id = ?').get(participant_user_id);
+    if (targetUser) {
+      const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const notifId = 'notif_adm_' + Date.now() + Math.random().toString(36).substr(2, 4);
+      const admitMsg = `✓ You have been approved to join private channel "${chan.name}"!`;
+      db.prepare(`
+        INSERT INTO community_notifications (id, recipient_username, sender_username, sender_name, message, is_read, type, channel_id, created_at)
+        VALUES (?, ?, ?, ?, ?, 0, 'channel_admit', ?, ?)
+      `).run(notifId, targetUser.username.toLowerCase(), chan.creator_username, chan.creator_name, admitMsg, chanId, nowTime);
+
+      broadcastCommunityEvent({
+        type: 'NEW_NOTIFICATION',
+        notification: {
+          id: notifId,
+          recipient_username: targetUser.username.toLowerCase(),
+          sender_username: chan.creator_username,
+          sender_name: chan.creator_name,
+          message: admitMsg,
+          type: 'channel_admit',
+          channel_id: chanId,
+          created_at: nowTime
+        }
+      });
+    }
+
+    broadcastCommunityEvent({
+      type: 'CHANNEL_UPDATE',
+      channel_id: chanId,
+      members,
+      pending_requests: requests
+    });
+
     res.json({ success: true, members, requests });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -2875,10 +3010,12 @@ router.post('/community/channels/:id/admit', (req, res) => {
 });
 
 // 10. Deny Participant
-router.post('/community/channels/:id/deny', (req, res) => {
+router.post(['/community/channels/deny', '/community/channels/:id/deny'], (req, res) => {
   try {
-    const chanId = req.params.id;
+    const chanId = req.params.id || req.body.channel_id || req.body.id;
     const { participant_user_id } = req.body;
+    if (!chanId || !participant_user_id) return res.status(400).json({ error: 'Channel ID and Participant User ID required.' });
+
     const chan = db.prepare('SELECT * FROM community_channels WHERE id = ?').get(chanId);
     if (!chan) return res.status(404).json({ error: 'Channel not found.' });
 
@@ -2887,6 +3024,12 @@ router.post('/community/channels/:id/deny', (req, res) => {
 
     db.prepare('UPDATE community_channels SET pending_requests = ? WHERE id = ?')
       .run(JSON.stringify(requests), chanId);
+
+    broadcastCommunityEvent({
+      type: 'CHANNEL_UPDATE',
+      channel_id: chanId,
+      pending_requests: requests
+    });
 
     res.json({ success: true, requests });
   } catch (error) {
@@ -2934,6 +3077,27 @@ router.post('/community/contact', (req, res) => {
       now
     );
 
+    const newQueryObj = {
+      id: queryId,
+      type: type || 'user',
+      name,
+      email: email || null,
+      user_id: user_id || 'guest',
+      username: username || 'unregistered',
+      social_account_id: social_account_id || null,
+      message,
+      proof_file_name: proof_file_name || null,
+      proof_file: proof_file || null,
+      ip: clientIp,
+      status: 'pending',
+      created_at: now
+    };
+
+    broadcastCommunityEvent({
+      type: 'NEW_QUERY',
+      query: newQueryObj
+    });
+
     res.json({ success: true, id: queryId });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -2958,6 +3122,12 @@ router.post('/community/admin/ban', (req, res) => {
         .run(user.ip_address, `Banned community user @${target_username}`, new Date().toISOString());
     }
 
+    broadcastCommunityEvent({
+      type: 'USER_BANNED',
+      banned_user_id: user_id,
+      target_username
+    });
+
     res.json({ success: true, banned_user_id: user_id });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -2978,6 +3148,12 @@ router.post('/community/admin/verify-badge', (req, res) => {
     const newBadge = user.verified_type === badge_type ? 'none' : badge_type;
     db.prepare('UPDATE community_users SET verified_type = ? WHERE id = ?').run(newBadge, user_id);
     db.prepare('UPDATE community_messages SET verified_type = ? WHERE user_id = ?').run(newBadge, user_id);
+
+    broadcastCommunityEvent({
+      type: 'BADGE_UPDATE',
+      user_id,
+      verified_type: newBadge
+    });
 
     res.json({ success: true, user_id, verified_type: newBadge });
   } catch (error) {
