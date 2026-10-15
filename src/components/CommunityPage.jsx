@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import IndianFlagLogo from './IndianFlagLogo';
 import {
+  Home,
   MessageSquare,
   Send,
   Database,
@@ -18,28 +19,17 @@ import {
   X,
   Plus,
   Phone,
-  Mail,
   User,
-  UserCheck,
-  Settings,
   Trash2,
   Ban,
   Share2,
   Copy,
-  ExternalLink,
   Bell,
   Paperclip,
-  AlertTriangle,
-  Sparkles,
   Award,
-  HelpCircle,
   LogOut,
   ArrowLeft,
-  ChevronDown,
-  ChevronUp,
   Download,
-  Flame,
-  Radio,
   Eye,
   RefreshCw,
   Play,
@@ -51,7 +41,6 @@ import {
   VolumeX,
   Maximize2,
   Pause,
-  Key,
   ChevronLeft,
   ChevronRight
 } from 'lucide-react';
@@ -1829,20 +1818,37 @@ export default function CommunityPage({ onSelectPage }) {
       <header className="shrink-0 z-40 bg-white border-b-2 sm:border-b-3 border-black shadow-[0_3px_0_0_#000]">
         
         {/* Main Bar */}
-        <div className="max-w-[1800px] w-full mx-auto px-3 sm:px-6 lg:px-8 py-2.5 sm:py-3 flex items-center justify-between gap-2 sm:gap-3">
+        <div className="max-w-[1800px] w-full mx-auto px-3 sm:px-6 lg:px-8 py-2 sm:py-2.5 flex items-center justify-between gap-2 sm:gap-3">
           
           <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            {/* Quick Return to Homepage (Visible on BOTH PC & Phone) */}
+            <button
+              type="button"
+              onClick={() => {
+                if (onSelectPage) onSelectPage('propagandus');
+                else {
+                  window.location.hash = '';
+                  window.location.pathname = '/';
+                }
+              }}
+              className="px-2.5 sm:px-3 py-1.5 bg-popYellow hover:bg-yellow-400 text-black border-2 border-black rounded-xl text-xs font-black uppercase shadow-[2px_2px_0px_#000] flex items-center gap-1.5 transition-all active:translate-y-0.5 shrink-0"
+              title="Return to Homepage"
+            >
+              <Home className="w-4 h-4 text-black shrink-0" />
+              <span className="font-comic tracking-wider">HOME</span>
+            </button>
+
             <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
-              <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-popYellow border-2 border-black flex items-center justify-center font-comic font-black text-base sm:text-lg shadow-[2px_2px_0px_#000] shrink-0">
+              <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-popYellow border-2 border-black flex items-center justify-center font-comic font-black text-sm sm:text-base shadow-[2px_2px_0px_#000] shrink-0">
                 💬
               </div>
               <div className="min-w-0">
-                <h1 className="font-comic text-lg sm:text-2xl text-black leading-none flex items-center gap-1.5 sm:gap-2">
+                <h1 className="font-comic text-base sm:text-xl md:text-2xl text-black leading-none flex items-center gap-1.5 sm:gap-2">
                   <span>COMMUNITY</span>
                   <span className="text-saffron-dark">CENTRAL</span>
                   <IndianFlagLogo size="xs" />
                 </h1>
-                <p className="text-[9px] sm:text-[11px] font-bold text-gray-700 truncate hidden xs:block">
+                <p className="text-[9px] sm:text-[10px] md:text-[11px] font-bold text-gray-700 truncate hidden xs:block">
                   Public Discussion • Sovereign Channels • Direct Encrypted Messages
                 </p>
               </div>
@@ -1955,7 +1961,7 @@ export default function CommunityPage({ onSelectPage }) {
       <div className="max-w-[1800px] w-full mx-auto px-2 sm:px-4 lg:px-6 py-2 sm:py-3.5 flex-1 min-h-0 flex flex-col md:flex-row gap-3 lg:gap-4 overflow-hidden">
         
         {/* Left Sidebar: Channels & Navigation (Responsive for Mobile) */}
-        <aside className={`w-full md:w-72 lg:w-80 shrink-0 h-full flex flex-col gap-3 overflow-y-auto pr-1 pb-1 select-none custom-scrollbar ${mobileView === 'chat' ? 'hidden md:flex' : 'flex'}`}>
+        <aside className={`w-full md:w-72 lg:w-80 shrink-0 h-full flex flex-col gap-3 overflow-y-auto pr-1 pb-1 select-none no-scrollbar ${mobileView === 'chat' ? 'hidden md:flex' : 'flex'}`}>
           
           {/* Public Chat Tab */}
           <div className="bg-white border-3 border-black rounded-2xl p-4 shadow-[4px_4px_0px_#000] space-y-3">
@@ -2010,7 +2016,7 @@ export default function CommunityPage({ onSelectPage }) {
               </button>
             </div>
 
-            <div className="space-y-2 max-h-64 overflow-y-auto">
+            <div className="space-y-2 max-h-64 overflow-y-auto no-scrollbar">
               {visibleChannels.length === 0 ? (
                 <div className="p-3 text-center text-[11px] text-gray-500 font-bold bg-gray-50 rounded-xl border border-dashed border-gray-300">
                   Private channels are hidden. Create your own channel or open a friend's invite link to join!
@@ -2077,7 +2083,7 @@ export default function CommunityPage({ onSelectPage }) {
               </button>
             </div>
 
-            <div className="space-y-1.5 max-h-48 overflow-y-auto">
+            <div className="space-y-1.5 max-h-48 overflow-y-auto no-scrollbar">
               {directChatUsers.length === 0 ? (
                 <div className="p-3 text-center text-[11px] text-gray-500 font-bold bg-gray-50 rounded-xl border border-dashed border-gray-300">
                   No direct chats yet. Tap any member's profile or click Find User to chat!
@@ -2194,11 +2200,11 @@ export default function CommunityPage({ onSelectPage }) {
         </aside>
 
         {/* Center: Main Chat Theater Area (Enlarged for PC & Responsive for Phone) */}
-        <main className={`flex-1 min-w-0 h-full flex flex-col bg-white border-2 sm:border-3 border-black rounded-2xl sm:rounded-3xl shadow-[4px_4px_0px_#000] sm:shadow-[6px_6px_0px_#000] overflow-hidden ${mobileView === 'list' ? 'hidden md:flex' : 'flex'}`}>
+        <main className={`flex-1 min-w-0 h-full min-h-0 flex flex-col bg-white border-2 sm:border-3 border-black rounded-2xl sm:rounded-3xl shadow-[4px_4px_0px_#000] sm:shadow-[6px_6px_0px_#000] overflow-hidden no-scrollbar ${mobileView === 'list' ? 'hidden md:flex' : 'flex'}`}>
           
           {/* Chat Header */}
           <div className="bg-[#FFE600] border-b-2 sm:border-b-3 border-black p-2.5 sm:p-3.5 md:p-4 flex items-center justify-between shrink-0">
-            <div className="flex items-center gap-2 sm:gap-2.5 min-w-0">
+            <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0">
               {/* Mobile Back Button to return to conversations */}
               <button
                 type="button"
@@ -2207,6 +2213,22 @@ export default function CommunityPage({ onSelectPage }) {
                 title="Back to conversations"
               >
                 <ArrowLeft className="w-4 h-4 text-black" />
+              </button>
+
+              {/* Mobile Direct Return to Home */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (onSelectPage) onSelectPage('propagandus');
+                  else {
+                    window.location.hash = '';
+                    window.location.pathname = '/';
+                  }
+                }}
+                className="md:hidden p-1.5 bg-white hover:bg-amber-100 border-2 border-black rounded-lg shadow-[1px_1px_0px_#000] mr-1 active:translate-y-0.5 shrink-0"
+                title="Return to Homepage"
+              >
+                <Home className="w-4 h-4 text-black" />
               </button>
 
               <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-white border-2 border-black flex items-center justify-center font-black text-sm sm:text-base shrink-0">
@@ -2288,7 +2310,7 @@ export default function CommunityPage({ onSelectPage }) {
             /* Active Messages Chat Feed (Internal Container Scroll Only) */
             <div
               ref={messagesContainerRef}
-              className="flex-1 min-h-0 p-2.5 sm:p-4 md:p-5 lg:p-6 overflow-y-auto space-y-2.5 sm:space-y-3 bg-white/70"
+              className="flex-1 min-h-0 p-2.5 sm:p-4 md:p-5 lg:p-6 overflow-y-auto space-y-2.5 sm:space-y-3 bg-white/70 no-scrollbar"
             >
               {activeMessages.length === 0 ? (
                 <div className="text-center py-16 text-gray-400 font-bold text-xs space-y-2">
@@ -2609,7 +2631,7 @@ export default function CommunityPage({ onSelectPage }) {
 
           {/* Tag Auto-complete Suggestion Box */}
           {tagSuggestion && tagSuggestion.length > 0 && (
-            <div className="bg-white border-t-2 border-black px-4 py-2 flex items-center gap-2 overflow-x-auto text-xs shrink-0">
+            <div className="bg-white border-t-2 border-black px-4 py-2 flex items-center gap-2 overflow-x-auto no-scrollbar text-xs shrink-0">
               <span className="text-[10px] font-black uppercase text-gray-500">Mention User:</span>
               {tagSuggestion.map(u => (
                 <button
@@ -2652,7 +2674,7 @@ export default function CommunityPage({ onSelectPage }) {
 
           {/* Attached Files Preview Bar with WhatsApp-Style Uploading Spinner */}
           {attachedFiles.length > 0 && (
-            <div className="bg-amber-50 border-t-2 border-black p-2 flex items-center gap-2 overflow-x-auto shrink-0">
+            <div className="bg-amber-50 border-t-2 border-black p-2 flex items-center gap-2 overflow-x-auto no-scrollbar shrink-0">
               {attachedFiles.map((f, idx) => (
                 <div key={idx} className="relative bg-white border-2 border-black rounded-xl p-1.5 flex items-center gap-2 text-xs font-bold shadow-sm">
                   {f.isUploading ? (
@@ -2719,7 +2741,7 @@ export default function CommunityPage({ onSelectPage }) {
               </div>
 
               {/* Fast Keyword Chips */}
-              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-[11px]">
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1 text-[11px]">
                 {['Trending', '🇮🇳 Jai Hind', 'Salute', 'Pride', 'Victory', 'Clap', 'Namaste', 'Modi'].map(cat => (
                   <button
                     key={cat}
@@ -2747,7 +2769,7 @@ export default function CommunityPage({ onSelectPage }) {
                   No GIFs found for "{giphyQuery}". Try another search!
                 </div>
               ) : (
-                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2 max-h-56 overflow-y-auto pr-1">
+                <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2 max-h-56 overflow-y-auto no-scrollbar pr-1">
                   {giphyResults.map(g => (
                     <img
                       key={g.id}
@@ -3250,7 +3272,7 @@ export default function CommunityPage({ onSelectPage }) {
               Channel: <strong>{activeChannelObj.name}</strong>. Admit or deny people requesting to join.
             </p>
 
-            <div className="space-y-2 max-h-72 overflow-y-auto">
+            <div className="space-y-2 max-h-72 overflow-y-auto no-scrollbar">
               {!activeChannelObj.pending_requests || activeChannelObj.pending_requests.length === 0 ? (
                 <div className="p-8 text-center text-xs text-gray-500 font-bold">
                   No pending participation requests right now.
@@ -3317,7 +3339,7 @@ export default function CommunityPage({ onSelectPage }) {
               />
             </div>
 
-            <div className="space-y-2 max-h-60 overflow-y-auto">
+            <div className="space-y-2 max-h-60 overflow-y-auto no-scrollbar">
               {users
                 .filter(u => u.id !== currentUser?.id && (u.name.toLowerCase().includes(searchQuery.toLowerCase()) || u.username.toLowerCase().includes(searchQuery.toLowerCase())))
                 .map(u => (
@@ -3516,7 +3538,7 @@ export default function CommunityPage({ onSelectPage }) {
               </button>
             </div>
 
-            <div className="space-y-2 max-h-72 overflow-y-auto text-xs">
+            <div className="space-y-2 max-h-72 overflow-y-auto no-scrollbar text-xs">
               {myNotifications.length === 0 ? (
                 <div className="p-6 text-center text-gray-500 font-bold">
                   No notifications yet. When someone mentions you (@{currentUser?.username}), you will be notified here!

@@ -11,7 +11,6 @@ import {
   Check,
   AlertCircle,
   Loader2,
-  Sparkles,
   Globe,
   Trash2,
   Phone,

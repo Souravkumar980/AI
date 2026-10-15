@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react';
 import IndianFlagLogo from './IndianFlagLogo';
 import { TwitterIcon } from './SocialIcons';
-import { X, Check, Copy, Share2, Download, MessageSquare, Sparkles } from 'lucide-react';
+import { X, Check, Copy, Download, MessageSquare } from 'lucide-react';
 import html2canvas from 'html2canvas';
 
 export default function ShareBusterModal({ isOpen, onClose, data }) {

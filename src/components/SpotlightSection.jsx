@@ -7,13 +7,9 @@ import {
   Maximize2,
   Minimize2,
   ExternalLink,
-  Sparkles,
   Tv,
   Image as ImageIcon,
   CheckCircle,
-  Eye,
-  Radio,
-  Sliders,
   ZoomIn,
   X
 } from 'lucide-react';

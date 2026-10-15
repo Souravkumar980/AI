@@ -5,7 +5,6 @@ import { TwitterIcon, YoutubeIcon, InstagramIcon } from './SocialIcons';
 import {
   Search,
   Filter,
-  AlertTriangle,
   ThumbsUp,
   ExternalLink,
   ShieldAlert,

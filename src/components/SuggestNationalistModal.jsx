@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import IndianFlagLogo from './IndianFlagLogo';
 import { TwitterIcon, YoutubeIcon, InstagramIcon } from './SocialIcons';
 import { detectPlatformFromUrl, cleanHandle, autoFetchSocialProfile } from '../utils/socialExtractor';
-import { X, PlusCircle, Check, AlertCircle, Loader2, Sparkles, Heart, Globe, Trash2 } from 'lucide-react';
+import { X, PlusCircle, Check, AlertCircle, Loader2, Heart, Globe, Trash2 } from 'lucide-react';
 
 export default function SuggestNationalistModal({ isOpen, onClose, onSuccess }) {
   const [name, setName] = useState('');

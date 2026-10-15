@@ -10,28 +10,18 @@ import {
   CheckCircle,
   XCircle,
   Share2,
-  ExternalLink,
   Layers,
   BarChart3,
-  Flame,
-  Award,
   Vote,
   Sun,
   Train,
   Plane,
-  ChevronRight,
   Filter,
-  Sparkles,
-  RefreshCw,
-  Landmark,
   ShieldAlert,
-  ArrowUpRight,
   Check,
   Calendar,
   Lock,
-  MapPin,
-  Clock,
-  AlertTriangle
+  MapPin
 } from 'lucide-react';
 
 // =====================================================================

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import IndianFlagLogo from './IndianFlagLogo';
-import { Database, PlusCircle, Menu, X, Award, Sparkles, Flame, Play, Pause, ListMusic, ShieldCheck, Users } from 'lucide-react';
+import { Database, PlusCircle, Menu, X, Award, Sparkles, Play, Pause, ListMusic, Users } from 'lucide-react';
 import { useMusicPlayer } from './MusicPlayer';
 
 export default function Header({

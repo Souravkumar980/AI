@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import IndianFlagLogo from './IndianFlagLogo';
-import { PlusCircle, Search, ShieldAlert, ArrowDown, Users, Flame, Globe, Activity } from 'lucide-react';
+import { PlusCircle, Search, ArrowDown, Users, Flame } from 'lucide-react';
 
 export default function Hero({ onOpenSubmit, stats }) {
   const [liveCount, setLiveCount] = useState(stats?.liveCount || 1);

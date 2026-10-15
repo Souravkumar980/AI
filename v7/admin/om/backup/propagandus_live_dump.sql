@@ -1,5 +1,5 @@
 -- Exposed Propagandus Database Dump
--- Auto-generated on: 2026-10-15T08:31:22.576Z
+-- Auto-generated on: 2026-10-15T09:10:36.308Z
 
 SET FOREIGN_KEY_CHECKS = 0;
 
@@ -9,6 +9,7 @@ INSERT INTO `entities` (`id`, `name`, `handle_x`, `handle_yt`, `handle_insta`, `
 ON DUPLICATE KEY UPDATE `upvotes`=VALUES(`upvotes`), `narrative`=VALUES(`narrative`);
 
 INSERT INTO `nationalist_influencers` (`id`, `name`, `handle_x`, `handle_yt`, `handle_insta`, `avatar_url`, `category`, `description`, `status`, `upvotes`, `suggested_by_ip`, `created_at`, `updated_at`) VALUES
+('nat-1792053208024-0ac2i5', 'Civicpop', NULL, NULL, 'civicpop_', 'https://scontent-sin6-1.cdninstagram.com/v/t51.82787-19/587960592_17843819670623316_4923065656859125823_n.jpg?stp=dst-jpg_s100x100_tt6&_nc_cat=111&ccb=7-5&_nc_sid=bf7eb4&efg=eyJ2ZW5jb2RlX3RhZyI6InByb2ZpbGVfcGljLnd3dy4xMDgwLkMzIn0u00253D&_nc_ohc=idQVukEX4yQQ7kNvwEFiiWk&_nc_oc=AdqhnNvxZxPEZCqz79GAnsojp1CohXYgVY3RQcD64FiLzkMCwVcC2MkT3E5MYTFi-hE&_nc_zt=24&_nc_ht=scontent-sin6-1.cdninstagram.com&_nc_gid=4M4wevZry7lcHVRjjJ1OVw&_nc_ss=7060f&oh=00_AQNalY31I62QW69D4nJdCs3hfJAyg00vb8VH3gNfiT1vrw&oe=6AD66C54', 'Solo Influencer, Journalist', 'This Page Help a Lot to expose the CJP', 'approved', 1, '152.59.143.146', '2026-10-15T08:33:28.024Z', '2026-10-15T08:33:40.059Z'),
 ('nat-1791987122410-e6mqab', 'OM', NULL, 'OMzWorld', NULL, 'https://yt3.googleusercontent.com/BeW0pQiflnx1hvjfAFTypvDzqnyLpkmWXzbG6bOYiJrsqJO05sTdEXxtRkivgwTjVM8UahE2mg=s800-c-k-c0x00ffffff-no-rj', 'Satire & Counter-Narrative', 'Right wing supporter', 'approved', 48, '152.59.147.155', '2026-10-14T14:12:02.410Z', '2026-10-14T14:41:06.319Z'),
 ('nat-1791987078602-gy998s', 'Abhiandniyu', NULL, 'AbhiandNiyu', 'abhiandniyu', 'https://yt3.googleusercontent.com/0I1uLsYBGtf9jIKHPmbgbfFkWWenA8Utkw-HPZWjNm1HG1619C8mtp39_heXmrWqbkuw3JFTzw=s800-c-k-c0x00ffffff-no-rj', 'Defence & Geopolitics', 'abhi and niyu is best youtuber of india', 'approved', 6, '152.59.147.155', '2026-10-14T14:11:18.602Z', '2026-10-14T14:12:11.732Z'),
 ('nat-1791987017706-9ajn7y', 'The Sham Sharma Show', NULL, 'ShamSharmaShow', NULL, 'https://yt3.googleusercontent.com/0wHJfi3CPoU8VtvNzAHW2I9UP6fFYd91KRN8DnYyBZS25RKFk0dvR4nqISBh-jtYOtirlA9lQ6g=s800-c-k-c0x00ffffff-no-rj', 'Satire & Counter-Narrative', 'shyam sharma sir is best', 'approved', 7, '152.59.147.155', '2026-10-14T14:10:17.706Z', '2026-10-14T14:12:12.602Z'),

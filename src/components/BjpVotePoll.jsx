@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import IndianFlagLogo from './IndianFlagLogo';
-import { Vote, Check, XCircle, ShieldCheck, Flame, ThumbsUp, ThumbsDown, Sparkles, RefreshCw } from 'lucide-react';
+import { Vote, ThumbsUp, ThumbsDown } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { playModiSound, playRagaSound } from '../utils/audioPlayer';
 

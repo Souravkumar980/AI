@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import IndianFlagLogo from './IndianFlagLogo';
-import { Flame, ThumbsUp, Share2, Sparkles, Pin, Clock, ShieldAlert, Newspaper, MessageSquare, Download } from 'lucide-react';
+import { Flame, ThumbsUp, Share2, Pin, Clock } from 'lucide-react';
 
 export default function AdminPostsFeed({ onOpenShareCard, reloadTrigger }) {
   const [posts, setPosts] = useState([]);

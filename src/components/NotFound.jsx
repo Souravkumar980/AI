@@ -1,6 +1,6 @@
 import React from 'react';
 import IndianFlagLogo from './IndianFlagLogo';
-import { Home, ArrowLeft } from 'lucide-react';
+import { Home } from 'lucide-react';
 
 export default function NotFound({ onGoHome }) {
   return (

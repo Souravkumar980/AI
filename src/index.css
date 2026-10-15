@@ -136,6 +136,24 @@
   background: #94a3b8;
 }
 
+/* Hide scrollbar thumb for horizontal and vertical scroll on chat & compact containers */
+.no-scrollbar,
+.chat-no-scrollbar,
+.no-scrollbar::-webkit-scrollbar,
+.chat-no-scrollbar::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  background: transparent !important;
+  -webkit-appearance: none !important;
+}
+
+.no-scrollbar,
+.chat-no-scrollbar {
+  -ms-overflow-style: none !important; /* IE and Edge */
+  scrollbar-width: none !important; /* Firefox */
+}
+
 /* Pop-Art Bulletin Marquee Animation */
 @keyframes bulletinMarquee {
   0% {

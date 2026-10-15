@@ -1,10 +1,10 @@
 {
-  "timestamp": "2026-10-15T08:31:22.575Z",
+  "timestamp": "2026-10-15T09:10:36.308Z",
   "platform": "Exposed Propagandus",
   "domain": "exposedpropagandus.is-best.net",
   "totalEntities": 2,
-  "totalReports": 0,
-  "totalNationalists": 4,
+  "totalReports": 1,
+  "totalNationalists": 5,
   "data": {
     "entities": [
       {
@@ -52,8 +52,35 @@
         "other_links": null
       }
     ],
-    "reports": [],
+    "reports": [
+      {
+        "id": "rep-1792055435265-8z3j8j",
+        "entity_id": "prop-1791982457781-qpedvg",
+        "entity_name": "Dhruv Rathee",
+        "report_type": "Edit",
+        "message": "update him",
+        "status": "pending",
+        "reported_by_ip": "152.59.143.146",
+        "created_at": "2026-10-15T09:10:35.265Z"
+      }
+    ],
     "nationalists": [
+      {
+        "id": "nat-1792053208024-0ac2i5",
+        "name": "Civicpop",
+        "handle_x": null,
+        "handle_yt": null,
+        "handle_insta": "civicpop_",
+        "avatar_url": "https://scontent-sin6-1.cdninstagram.com/v/t51.82787-19/587960592_17843819670623316_4923065656859125823_n.jpg?stp=dst-jpg_s100x100_tt6&_nc_cat=111&ccb=7-5&_nc_sid=bf7eb4&efg=eyJ2ZW5jb2RlX3RhZyI6InByb2ZpbGVfcGljLnd3dy4xMDgwLkMzIn0u00253D&_nc_ohc=idQVukEX4yQQ7kNvwEFiiWk&_nc_oc=AdqhnNvxZxPEZCqz79GAnsojp1CohXYgVY3RQcD64FiLzkMCwVcC2MkT3E5MYTFi-hE&_nc_zt=24&_nc_ht=scontent-sin6-1.cdninstagram.com&_nc_gid=4M4wevZry7lcHVRjjJ1OVw&_nc_ss=7060f&oh=00_AQNalY31I62QW69D4nJdCs3hfJAyg00vb8VH3gNfiT1vrw&oe=6AD66C54",
+        "category": "Solo Influencer, Journalist",
+        "description": "This Page Help a Lot to expose the CJP",
+        "status": "approved",
+        "upvotes": 1,
+        "suggested_by_ip": "152.59.143.146",
+        "created_at": "2026-10-15T08:33:28.024Z",
+        "updated_at": "2026-10-15T08:33:40.059Z",
+        "other_links": null
+      },
       {
         "id": "nat-1791987122410-e6mqab",
         "name": "OM",

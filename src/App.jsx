@@ -16,7 +16,7 @@ import CommunityPage from './components/CommunityPage';
 import Footer from './components/Footer';
 import { MusicPlayerProvider } from './components/MusicPlayer';
 import confetti from 'canvas-confetti';
-import { PlusCircle, Award, Sparkles } from 'lucide-react';
+import { PlusCircle, Award } from 'lucide-react';
 import { playRandomPropaganduSound } from './utils/audioPlayer';
 
 export default function App() {

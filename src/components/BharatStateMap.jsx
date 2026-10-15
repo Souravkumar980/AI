@@ -1,26 +1,14 @@
 import React, { useState } from 'react';
 import {
-  MapPin,
   Share2,
   Copy,
   Check,
   TrendingUp,
-  ShieldCheck,
   Hospital,
   Milestone,
-  Flame,
-  Award,
   Sparkles,
-  Plane,
-  Zap,
-  Globe,
   Filter,
   CheckCircle,
-  XCircle,
-  Eye,
-  Layers,
-  ChevronRight,
-  Sun,
   Train
 } from 'lucide-react';
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, createContext, useContext } from 'react';
-import { Play, Pause, SkipForward, SkipBack, ListMusic, Volume2, VolumeX, X, Disc3, Music2, Sparkles, ExternalLink, Shuffle } from 'lucide-react';
+import { Play, Pause, SkipForward, SkipBack, Volume2, VolumeX, X, Disc3, Shuffle } from 'lucide-react';
 
 const MusicPlayerContext = createContext(null);
 

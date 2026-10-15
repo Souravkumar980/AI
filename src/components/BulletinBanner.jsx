@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { Megaphone } from 'lucide-react';
 
 export default function BulletinBanner() {
   const [bulletin, setBulletin] = useState({

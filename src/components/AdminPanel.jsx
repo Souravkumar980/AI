@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import IndianFlagLogo from './IndianFlagLogo';
-import { OPPOSITION_PARTIES, OPPOSITION_INSTITUTIONS } from '../data/partiesAndInstitutions';
+import { OPPOSITION_PARTIES } from '../data/partiesAndInstitutions';
 import {
   Lock,
   Unlock,
@@ -13,7 +13,6 @@ import {
   Edit,
   CheckCircle,
   MessageSquare,
-  XCircle,
   Ban,
   RefreshCw,
   X,
@@ -23,8 +22,6 @@ import {
   Save,
   Activity,
   PlusCircle,
-  ThumbsUp,
-  UserCheck,
   Flame,
   Award,
   Loader2,
@@ -37,8 +34,6 @@ import {
   Pin,
   Tv,
   Video,
-  Play,
-  Eye,
   Music,
   ListMusic,
   Disc3,
@@ -46,10 +41,8 @@ import {
   Smartphone,
   Monitor,
   Tablet,
-  Wifi,
   Clock
 } from 'lucide-react';
-import { YoutubeIcon } from './SocialIcons';
 
 // Helper to resolve any handle or input string to a direct clickable URL
 function resolveSocialUrl(handle, platform) {
