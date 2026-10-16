@@ -792,7 +792,22 @@ export default function CommunityPage({ onSelectPage }) {
           const data = event.data;
           if (data.type === 'NEW_MESSAGE' && data.message) {
             setMessages(prev => {
-              if (prev.some(m => m.id === data.message.id)) return prev;
+              // 1. Direct ID deduplication
+              if (prev.some(m => m.id === data.message.id)) {
+                return prev.map(m => m.id === data.message.id ? { ...data.message, is_uploading: false } : m);
+              }
+              // 2. Optimistic pending deduplication for current user
+              if (currentUser && data.message.user_id === currentUser.id) {
+                const optIdx = prev.findIndex(m =>
+                  m.user_id === currentUser.id &&
+                  m.channel_id === data.message.channel_id &&
+                  m.content === data.message.content &&
+                  (m.is_uploading || m.id.startsWith('msg_'))
+                );
+                if (optIdx >= 0) {
+                  return prev.map((m, idx) => idx === optIdx ? { ...data.message, is_uploading: false } : m);
+                }
+              }
               return [...prev, data.message];
             });
             scrollMessagesToBottom('smooth');
@@ -824,7 +839,22 @@ export default function CommunityPage({ onSelectPage }) {
             const data = JSON.parse(event.data);
             if (data.type === 'NEW_MESSAGE' && data.message) {
               setMessages(prev => {
-                if (prev.some(m => m.id === data.message.id)) return prev;
+                // 1. Direct ID deduplication
+                if (prev.some(m => m.id === data.message.id)) {
+                  return prev.map(m => m.id === data.message.id ? { ...data.message, is_uploading: false } : m);
+                }
+                // 2. Optimistic pending deduplication for current user
+                if (currentUser && data.message.user_id === currentUser.id) {
+                  const optIdx = prev.findIndex(m =>
+                    m.user_id === currentUser.id &&
+                    m.channel_id === data.message.channel_id &&
+                    m.content === data.message.content &&
+                    (m.is_uploading || m.id.startsWith('msg_'))
+                  );
+                  if (optIdx >= 0) {
+                    return prev.map((m, idx) => idx === optIdx ? { ...data.message, is_uploading: false } : m);
+                  }
+                }
                 return [...prev, data.message];
               });
               scrollMessagesToBottom('smooth');
@@ -1462,7 +1492,13 @@ export default function CommunityPage({ onSelectPage }) {
         if (res.ok) {
           const data = await res.json();
           const serverMsg = data.message ? { ...data.message, is_uploading: false } : finalizedMessage;
-          setMessages(prev => prev.map(m => m.id === tempMsgId ? serverMsg : m));
+          setMessages(prev => {
+            const hasServerMsg = prev.some(m => m.id === serverMsg.id && m.id !== tempMsgId);
+            if (hasServerMsg) {
+              return prev.filter(m => m.id !== tempMsgId);
+            }
+            return prev.map(m => m.id === tempMsgId ? serverMsg : m);
+          });
           broadcastCrossTab({ type: 'MESSAGE_UPDATE', message: serverMsg });
         } else {
           setMessages(prev => prev.map(m => m.id === tempMsgId ? finalizedMessage : m));
@@ -1543,8 +1579,12 @@ export default function CommunityPage({ onSelectPage }) {
       if (res.ok) {
         const data = await res.json();
         if (data.message) {
-          setMessages(prev => prev.map(m => m.id === newMessage.id ? data.message : m));
-          broadcastCrossTab({ type: 'NEW_MESSAGE', message: data.message });
+          setMessages(prev => {
+            const hasServerMsg = prev.some(m => m.id === data.message.id && m.id !== newMessage.id);
+            if (hasServerMsg) return prev.filter(m => m.id !== newMessage.id);
+            return prev.map(m => m.id === newMessage.id ? data.message : m);
+          });
+          broadcastCrossTab({ type: 'MESSAGE_UPDATE', message: data.message });
         }
       }
     } catch {}

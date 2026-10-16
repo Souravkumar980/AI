@@ -304,40 +304,19 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
       });
       if (res.ok) {
         const data = await res.json();
-        const activeUsers = data.liveCount ?? data.activeNow ?? 24;
-        const totalVisits = data.totalVisits ?? 1480;
-        const totalUnique = data.totalUniqueVisitors ?? (data.totalVisits ? Math.round(data.totalVisits * 0.72) : 842);
-
-        // If the worker returned an empty visitors list, populate realistic active visitors
-        let visitorList = Array.isArray(data.visitors) && data.visitors.length > 0 ? data.visitors : [];
-        if (visitorList.length === 0 && activeUsers > 0) {
-          const sampleLocations = ['Mumbai, MH', 'New Delhi, DL', 'Bengaluru, KA', 'Ahmedabad, GJ', 'Lucknow, UP', 'Hyderabad, TS', 'Pune, MH', 'Jaipur, RJ', 'Kolkata, WB'];
-          const sampleDevices = ['Chrome Mobile (Android)', 'Safari Mobile (iOS)', 'Chrome Desktop (Windows)', 'Edge Desktop (Windows)', 'Safari (macOS)'];
-          const samplePages = ['/ (Home Propagandus)', '/community (Nationalist Chat)', '/submit (Submit Profile)', '/bulletin (National Broadcast)'];
-
-          visitorList = Array.from({ length: Math.min(activeUsers, 12) }, (_, i) => ({
-            id: `v-live-${i + 1}`,
-            ip: `152.59.${100 + i}.${10 + (i * 7) % 89}`,
-            city: sampleLocations[i % sampleLocations.length],
-            device: sampleDevices[i % sampleDevices.length],
-            currentPage: samplePages[i % samplePages.length],
-            duration: `${Math.floor(1 + i * 2.3)}m ${(i * 17) % 60}s`,
-            status: 'ACTIVE_NOW',
-            isBlocked: false,
-            lastSeen: new Date(Date.now() - i * 45000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-          }));
-        }
+        const activeUsers = data.liveCount ?? data.activeNow ?? 0;
+        const totalVisits = data.totalVisits ?? 0;
+        const totalUnique = data.totalUniqueVisitors ?? (data.totalVisits || 0);
+        const visitorList = Array.isArray(data.visitors) ? data.visitors : [];
 
         setLiveTrafficData({
           liveCount: activeUsers,
           activeNow: activeUsers,
           totalUniqueVisitors: totalUnique,
           totalVisits: totalVisits,
-          deviceBreakdown: data.deviceBreakdown || { mobile: 68, desktop: 28, tablet: 4 },
+          deviceBreakdown: data.deviceBreakdown || { mobile: 0, desktop: 0, tablet: 0 },
           visitors: visitorList,
-          recentLogs: Array.isArray(data.recentLogs) && data.recentLogs.length > 0 ? data.recentLogs : [
-            { id: 'log-1', action: 'API_GATEWAY_SYNC', details: 'Cloudflare Worker Live Node connected successfully.', ip: '152.59.102.4', created_at: new Date().toLocaleTimeString() }
-          ]
+          recentLogs: Array.isArray(data.recentLogs) ? data.recentLogs : []
         });
       }
     } catch (e) {
@@ -442,11 +421,11 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
         if (statsRes.ok) {
           const statsData = await statsRes.json();
           setStats({
-            totalEntities: statsData.totalEntities ?? statsData.totalExposed ?? 42,
-            verifiedEntities: statsData.verifiedEntities ?? Math.round((statsData.totalExposed || 42) * 0.85),
-            totalNationalists: statsData.totalNationalists ?? 88,
-            totalReports: statsData.totalReports ?? statsData.pendingReports ?? 3,
-            blockedIps: statsData.blockedIps ?? 24,
+            totalEntities: statsData.totalEntities ?? statsData.totalExposed ?? 0,
+            verifiedEntities: statsData.verifiedEntities ?? 0,
+            totalNationalists: statsData.totalNationalists ?? 0,
+            totalReports: statsData.totalReports ?? statsData.pendingReports ?? 0,
+            blockedIps: statsData.blockedIps ?? 0,
             ...statsData
           });
         }
