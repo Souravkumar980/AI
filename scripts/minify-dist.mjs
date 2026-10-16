@@ -83,6 +83,102 @@ async function runMinification() {
   }
 
   await processDir(distDir);
+
+  // 3. Generate Standalone upload.html with jsDelivr CDN links
+  await generateUploadHtml();
+}
+
+async function generateUploadHtml() {
+  console.log('📦 Generating Standalone upload.html with jsDelivr CDN integration...');
+  const assetsDir = path.join(distDir, 'assets');
+  let jsFile = '';
+  let cssFile = '';
+
+  if (fs.existsSync(assetsDir)) {
+    const assetFiles = fs.readdirSync(assetsDir);
+    jsFile = assetFiles.find(f => f.startsWith('index-') && f.endsWith('.js')) || '';
+    cssFile = assetFiles.find(f => f.startsWith('index-') && f.endsWith('.css')) || '';
+  }
+
+  const cdnBase = 'https://cdn.jsdelivr.net/gh/Souravkumar980/dist@main';
+  const jsUrl = jsFile ? `${cdnBase}/assets/${jsFile}` : `${cdnBase}/assets/index.js`;
+  const cssUrl = cssFile ? `${cdnBase}/assets/${cssFile}` : `${cdnBase}/assets/index.css`;
+  const faviconUrl = `${cdnBase}/favicon.png`;
+
+  const uploadHtmlContent = `<!doctype html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=5">
+  <title>Exposed Propagandus | Bharat Mata ki Jai 🇮🇳</title>
+  <meta name="description" content="Public database tracking leftist propagandist influencers, political workers, and entities spreading anti-India and anti-Hindu narratives across YouTube, X, and Instagram.">
+  <link rel="icon" type="image/png" href="${faviconUrl}">
+  <link rel="apple-touch-icon" href="${faviconUrl}">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bangers&family=Bebas+Neue&family=Inter:wght@400;500;600;700;800;900&family=Outfit:wght@500;600;700;800;900&family=Space+Grotesk:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" crossorigin href="${cssUrl}">
+  <script>
+    (function() {
+      var CDN_BASE = '${cdnBase}';
+      window.__CDN_BASE__ = CDN_BASE;
+      window.__API_BASE_URL__ = 'https://exposed-api.exposedpropagandu.workers.dev';
+      window.__EP_CLIENT_KEY__ = 'ep-client-v1-bharat-first-2024';
+
+      var staticAssets = ['/golden.png', '/blue.png', '/favicon.png', '/flag-of-india.png', '/flag-of-india-330.png', '/donate-qr.jpg'];
+      var origSrcDesc = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, 'src');
+      if (origSrcDesc && origSrcDesc.set) {
+        Object.defineProperty(HTMLImageElement.prototype, 'src', {
+          set: function(val) {
+            if (typeof val === 'string') {
+              for (var i = 0; i < staticAssets.length; i++) {
+                if (val.startsWith(staticAssets[i])) {
+                  return origSrcDesc.set.call(this, CDN_BASE + val);
+                }
+              }
+            }
+            return origSrcDesc.set.call(this, val);
+          },
+          get: origSrcDesc.get
+        });
+      }
+
+      if (window.Audio) {
+        var OrigAudio = window.Audio;
+        window.Audio = function(src) {
+          if (typeof src === 'string' && src.startsWith('/sounds/')) {
+            src = CDN_BASE + src;
+          }
+          return new OrigAudio(src);
+        };
+        window.Audio.prototype = OrigAudio.prototype;
+      }
+    })();
+  </script>
+  <script type="module" crossorigin src="${jsUrl}"></script>
+</head>
+<body class="bg-[#F8F9FA] text-black font-body antialiased selection:bg-saffron selection:text-black overflow-x-hidden min-h-screen">
+  <div id="root"></div>
+</body>
+</html>`;
+
+  const minifiedHtml = await minifyHtml(uploadHtmlContent, {
+    collapseWhitespace: true,
+    removeComments: true,
+    removeRedundantAttributes: true,
+    useShortDoctype: true,
+    minifyCSS: true,
+    minifyJS: true
+  });
+
+  const distUploadPath = path.join(distDir, 'upload.html');
+  const rootUploadPath = path.resolve(__dirname, '../upload.html');
+
+  fs.writeFileSync(distUploadPath, minifiedHtml, 'utf8');
+  fs.writeFileSync(rootUploadPath, minifiedHtml, 'utf8');
+  console.log(`✅ Generated Standalone upload.html (${minifiedHtml.length} bytes) at:`);
+  console.log(`   - ${distUploadPath}`);
+  console.log(`   - ${rootUploadPath}`);
 }
 
 runMinification().then(() => {

@@ -8,6 +8,7 @@
     "server": "node server/index.js",
     "client": "vite",
     "build": "vite build && node scripts/minify-dist.mjs",
+    "deploy:dist": "node scripts/deploy-dist.mjs",
     "dev": "concurrently -n \"SERVER,VITE\" -c \"blue,green\" \"node server/index.js\" \"vite\""
   },
   "repository": {
