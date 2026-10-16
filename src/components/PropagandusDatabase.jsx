@@ -28,7 +28,23 @@ export default function PropagandusDatabase({ onOpenSubmit, onOpenReport, onOpen
   const [entities, setEntities] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [categories, setCategories] = useState(ENTITY_CATEGORIES);
   const [selectedCategory, setSelectedCategory] = useState('All');
+
+  useEffect(() => {
+    fetch('/api/categories')
+      .then(r => r.json())
+      .then(data => {
+        if (Array.isArray(data) && data.length > 0) {
+          const defaultIds = new Set(ENTITY_CATEGORIES.map(c => c.id));
+          const dynamic = data
+            .filter(d => (d.type === 'entity' || !d.type) && d.name && !defaultIds.has(d.name))
+            .map(d => ({ id: d.name, label: d.name, icon: 'Share2' }));
+          setCategories([...ENTITY_CATEGORIES, ...dynamic]);
+        }
+      })
+      .catch(() => {});
+  }, [reloadTrigger]);
   const [selectedParty, setSelectedParty] = useState('All');
   const [selectedInstitution, setSelectedInstitution] = useState('All');
   const [sortBy, setSortBy] = useState('trending');
@@ -250,7 +266,7 @@ export default function PropagandusDatabase({ onOpenSubmit, onOpenReport, onOpen
                 className="w-full px-2.5 py-1.5 bg-gray-50 border border-gray-300 rounded-lg text-xs font-semibold focus:outline-none"
               >
                 <option value="All">All Categories</option>
-                {ENTITY_CATEGORIES.map(c => (
+                {categories.map(c => (
                   <option key={c.id} value={c.id}>{c.id}</option>
                 ))}
               </select>

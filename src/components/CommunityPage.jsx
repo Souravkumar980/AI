@@ -415,9 +415,28 @@ export default function CommunityPage({ onSelectPage }) {
   });
   const [loginError, setLoginError] = useState('');
 
-  // Edit Username Form
+  // Edit Username & Display Name Form (Max 3 Changes for non-admins)
   const [newUsernameInput, setNewUsernameInput] = useState('');
   const [usernameUpdateMsg, setUsernameUpdateMsg] = useState('');
+  const [newNameInput, setNewNameInput] = useState('');
+  const [nameUpdateMsg, setNameUpdateMsg] = useState('');
+
+  // Mobile / Touch Hold Active Message Action
+  const [activeMsgActionId, setActiveMsgActionId] = useState(null);
+  const holdTimerRef = useRef(null);
+
+  const handleTouchStart = (msgId) => {
+    holdTimerRef.current = setTimeout(() => {
+      setActiveMsgActionId(prev => prev === msgId ? null : msgId);
+    }, 350);
+  };
+
+  const handleTouchEnd = () => {
+    if (holdTimerRef.current) {
+      clearTimeout(holdTimerRef.current);
+      holdTimerRef.current = null;
+    }
+  };
 
   // New Channel Form
   const [channelForm, setChannelForm] = useState({
@@ -1171,6 +1190,9 @@ export default function CommunityPage({ onSelectPage }) {
   // -------------------------------------------------------------
   // USERNAME CUSTOMIZATION & BLACKLIST CHECK
   // -------------------------------------------------------------
+  // -------------------------------------------------------------
+  // USERNAME CUSTOMIZATION & BLACKLIST CHECK (MAX 3 FOR USERS)
+  // -------------------------------------------------------------
   const handleUpdateUsername = async (e) => {
     e.preventDefault();
     setUsernameUpdateMsg('');
@@ -1179,6 +1201,12 @@ export default function CommunityPage({ onSelectPage }) {
     const cleanUsername = newUsernameInput.trim().toLowerCase().replace(/[^a-z0-9._]/g, '');
 
     const isAdmin = currentUser.email === 'omkumar.working@gmail.com' || currentUser.is_admin;
+    const usernameChanges = currentUser.username_change_count || 0;
+
+    if (!isAdmin && usernameChanges >= 3) {
+      setUsernameUpdateMsg('You have reached the maximum limit of 3 username changes.');
+      return;
+    }
 
     if (!isAdmin) {
       if (cleanUsername.length < 3 || cleanUsername.length > 25) {
@@ -1204,6 +1232,7 @@ export default function CommunityPage({ onSelectPage }) {
       return;
     }
 
+    let newCount = usernameChanges + 1;
     try {
       const res = await fetch(getCommunityApiUrl('/api/community/profile/username'), {
         method: 'POST',
@@ -1215,14 +1244,75 @@ export default function CommunityPage({ onSelectPage }) {
         setUsernameUpdateMsg('Error: ' + (data.error || 'Username update failed.'));
         return;
       }
+      if (data.username_change_count !== undefined) {
+        newCount = data.username_change_count;
+      }
     } catch {}
 
     // Update
-    const updatedUser = { ...currentUser, username: cleanUsername };
+    const updatedUser = { ...currentUser, username: cleanUsername, username_change_count: newCount };
     setCurrentUser(updatedUser);
     setUsers(users.map(u => u.id === currentUser.id ? updatedUser : u));
     setNewUsernameInput('');
     setUsernameUpdateMsg('✓ Username successfully changed to @' + cleanUsername);
+  };
+
+  // -------------------------------------------------------------
+  // DISPLAY NAME CUSTOMIZATION (MAX 3 CHANGES FOR USERS)
+  // -------------------------------------------------------------
+  const handleUpdateName = async (e) => {
+    e.preventDefault();
+    setNameUpdateMsg('');
+
+    if (!currentUser) return;
+    const cleanName = newNameInput.trim();
+    if (!cleanName) return;
+
+    const isAdmin = currentUser.email === 'omkumar.working@gmail.com' || currentUser.is_admin;
+    const nameChanges = currentUser.name_change_count || 0;
+
+    if (!isAdmin && nameChanges >= 3) {
+      setNameUpdateMsg('You have reached the maximum limit of 3 display name changes.');
+      return;
+    }
+
+    if (!isAdmin) {
+      if (cleanName.length < 2 || cleanName.length > 60) {
+        setNameUpdateMsg('Display name must be between 2 and 60 characters.');
+        return;
+      }
+    } else {
+      if (cleanName.length < 2 || cleanName.length > 100) {
+        setNameUpdateMsg('Display name must be at least 2 characters.');
+        return;
+      }
+    }
+
+    let newCount = nameChanges + 1;
+    try {
+      const res = await fetch(getCommunityApiUrl('/api/community/profile/name'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: currentUser.id, new_name: cleanName })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setNameUpdateMsg('Error: ' + (data.error || 'Name update failed.'));
+        return;
+      }
+      if (data.name_change_count !== undefined) {
+        newCount = data.name_change_count;
+      }
+    } catch {
+      setNameUpdateMsg('Failed to update display name.');
+      return;
+    }
+
+    const updatedUser = { ...currentUser, name: cleanName, name_change_count: newCount };
+    setCurrentUser(updatedUser);
+    setUsers(users.map(u => u.id === currentUser.id ? updatedUser : u));
+    setNewNameInput('');
+    setNameUpdateMsg('✓ Display name successfully changed to ' + cleanName);
   };
 
   // -------------------------------------------------------------
@@ -2722,276 +2812,352 @@ export default function CommunityPage({ onSelectPage }) {
                           </div>
                         )}
 
-                        {/* WhatsApp-Style Pop Art Message Bubble */}
-                        <div
-                          id={'comm_msg_' + msg.id}
-                          onDoubleClick={() => setReplyTarget({ id: msg.id, user_name: msg.user_name, content: msg.content })}
-                          className={`relative p-2.5 sm:p-3 rounded-2xl border-2 border-black text-xs font-semibold leading-relaxed shadow-[2px_2px_0px_#000] break-words transition-all duration-300 ${
-                            isMe ? 'bg-[#DCF8C6] text-black rounded-tr-xs' : 'bg-white text-gray-900 rounded-tl-xs'
-                          } ${highlightedMsgId === msg.id ? 'ring-4 ring-popYellow bg-yellow-100 scale-[1.01]' : ''}`}
-                        >
-                          {/* WhatsApp-Style Quoted Reply Box with Jump to Message */}
-                          {msg.reply_to && (
+                        {/* Message Row with Action Buttons Before (Right/isMe) or After (Left/!isMe) */}
+                        <div className={`relative flex items-center gap-1.5 max-w-full ${isMe ? 'flex-row justify-end' : 'flex-row justify-start'}`}>
+                          {/* If isMe: Action buttons appear BEFORE message bubble (to its left) */}
+                          {isMe && (
                             <div
-                              onClick={() => handleScrollToMessage(msg.reply_to.id || msg.reply_to.message_id)}
-                              className="mb-2 p-2 bg-black/5 hover:bg-black/10 border-l-4 border-tirangaGreen rounded-r-lg text-[11px] space-y-0.5 cursor-pointer transition-colors select-none group/quote"
-                              title="Click to jump to quoted message"
+                              className={`${
+                                activeMsgActionId === msg.id
+                                  ? 'opacity-100 pointer-events-auto'
+                                  : 'opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto'
+                              } transition-opacity z-20 flex items-center gap-1 shrink-0 relative select-none`}
                             >
-                              <div className="font-black text-tirangaGreen flex items-center justify-between">
-                                <span>{msg.reply_to.user_name || msg.reply_to.sender || 'User'}</span>
-                                <span className="text-[9px] text-gray-500 font-mono group-hover/quote:underline">↳ jump</span>
-                              </div>
-                              <div className="text-gray-600 line-clamp-2 italic font-normal">
-                                {msg.reply_to.content || msg.reply_to.text}
-                              </div>
-                            </div>
-                          )}
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActiveReactionPickerMsgId(activeReactionPickerMsgId === msg.id ? null : msg.id);
+                                }}
+                                className="w-7 h-7 rounded-full bg-white border-2 border-black flex items-center justify-center shadow-[1px_1px_0px_#000] hover:bg-popYellow transition-transform hover:scale-110 active:scale-95 text-gray-700 hover:text-black cursor-pointer"
+                                title="React to message"
+                              >
+                                <Smile className="w-3.5 h-3.5" />
+                              </button>
 
-                          {/* Text Content with highlighted @mentions */}
-                          {msg.content && (
-                            <div className="whitespace-pre-wrap">
-                              {msg.content.split(/(@[a-zA-Z0-9_.]+)/g).map((part, pIdx) => {
-                                if (part.startsWith('@')) {
-                                  return (
-                                    <span
-                                      key={pIdx}
-                                      className="px-1 py-0.2 bg-black text-popYellow font-mono font-bold rounded mx-0.5"
-                                    >
-                                      {part}
-                                    </span>
-                                  );
-                                }
-                                return part;
-                              })}
-                            </div>
-                          )}
+                              <button
+                                type="button"
+                                onClick={() => setReplyTarget({ id: msg.id, user_name: msg.user_name, content: msg.content })}
+                                className="w-7 h-7 rounded-full bg-white border-2 border-black flex items-center justify-center shadow-[1px_1px_0px_#000] hover:bg-popYellow transition-transform hover:scale-110 active:scale-95 text-gray-700 hover:text-black cursor-pointer"
+                                title="Reply (or double-click bubble)"
+                              >
+                                <MessageSquare className="w-3.5 h-3.5" />
+                              </button>
 
-                          {/* File Attachments with In-App Media Lightbox Opener & WhatsApp Buffering */}
-                          {msg.attachments && msg.attachments.length > 0 && (
-                            <div className="space-y-1.5 pt-1.5">
-                              {msg.attachments.map((file, fIdx) => (
-                                <div
-                                  key={fIdx}
-                                  className="rounded-xl border-2 border-black overflow-hidden bg-white shadow-sm relative group/attach"
-                                >
-                                  {file.type === 'image' ? (
-                                    <div
-                                      onClick={() => !file.is_uploading && setActiveMediaViewer({ type: 'image', url: resolveMediaUrl(file.url), name: file.name, size: file.size })}
-                                      className="cursor-pointer relative overflow-hidden max-h-60 sm:max-h-72 md:max-h-80 lg:max-h-96 flex items-center justify-center bg-gray-50"
-                                      title={file.is_uploading ? 'Uploading to database...' : 'Tap to open high-res image'}
-                                    >
-                                      <img
-                                        src={resolveMediaUrl(file.url)}
-                                        alt={file.name}
-                                        className="max-h-60 sm:max-h-72 md:max-h-80 lg:max-h-96 w-auto max-w-full object-cover hover:scale-102 transition-transform"
-                                      />
-
-                                      {/* WhatsApp-Style Circular Buffering Animation Overlay */}
-                                      {file.is_uploading ? (
-                                        <div className="absolute inset-0 bg-black/45 backdrop-blur-[1px] flex flex-col items-center justify-center z-10 select-none">
-                                          <div className="relative w-14 h-14 bg-black/60 rounded-full border-2 border-white/20 flex items-center justify-center shadow-lg">
-                                            <div className="w-10 h-10 rounded-full border-3 border-white/20 border-t-white animate-spin" />
-                                            <div className="absolute inset-0 flex items-center justify-center">
-                                              <div className="w-2.5 h-2.5 rounded-full bg-white/90 animate-pulse" />
-                                            </div>
-                                          </div>
-                                          <span className="text-[10px] font-black text-white uppercase tracking-wider mt-2 bg-black/70 px-2.5 py-0.5 rounded-full shadow">
-                                            Uploading...
-                                          </span>
-                                        </div>
-                                      ) : (
-                                        <div className="absolute inset-0 bg-black/0 hover:bg-black/25 flex items-center justify-center transition-colors">
-                                          <Eye className="w-6 h-6 text-white opacity-0 group-hover/attach:opacity-100 transition-opacity drop-shadow" />
-                                        </div>
-                                      )}
-                                    </div>
-                                  ) : file.type === 'video' ? (
-                                    <div
-                                      onClick={() => !file.is_uploading && setActiveMediaViewer({ type: 'video', url: resolveMediaUrl(file.url), name: file.name, size: file.size })}
-                                      className="cursor-pointer relative bg-black max-h-56 sm:max-h-68 md:max-h-80 flex items-center justify-center"
-                                      title={file.is_uploading ? 'Uploading video...' : 'Tap to open in-app video player'}
-                                    >
-                                      <video className="max-h-56 sm:max-h-68 md:max-h-80 w-full object-cover opacity-80">
-                                        <source src={resolveMediaUrl(file.url)} />
-                                      </video>
-                                      {file.is_uploading ? (
-                                        <div className="absolute inset-0 bg-black/50 backdrop-blur-[1px] flex flex-col items-center justify-center z-10">
-                                          <div className="w-12 h-12 rounded-full border-3 border-white/20 border-t-white animate-spin" />
-                                          <span className="text-[10px] font-bold text-white uppercase mt-2">Uploading...</span>
-                                        </div>
-                                      ) : (
-                                        <div className="absolute inset-0 flex items-center justify-center bg-black/30 hover:bg-black/10 transition-colors">
-                                          <div className="w-12 h-12 rounded-full bg-white/95 border-2 border-black flex items-center justify-center shadow-lg">
-                                            <Play className="w-6 h-6 text-black fill-black ml-0.5" />
-                                          </div>
-                                        </div>
-                                      )}
-                                    </div>
-                                  ) : (
-                                    <div
-                                      onClick={() => !file.is_uploading && setActiveMediaViewer({ type: file.type === 'pdf' ? 'pdf' : 'file', url: resolveMediaUrl(file.url), name: file.name, size: file.size })}
-                                      className="p-2.5 flex items-center justify-between gap-3 text-xs cursor-pointer hover:bg-amber-50/50"
-                                      title={file.is_uploading ? 'Uploading file...' : (file.type === 'pdf' ? 'Tap to view PDF in app' : 'Tap to open file')}
-                                    >
-                                      <div className="flex items-center gap-2 truncate">
-                                        <FileText className="w-4 h-4 text-saffron-dark shrink-0" />
-                                        <span className="font-bold truncate">{file.name}</span>
-                                        <span className="text-[10px] text-gray-500 font-mono">({file.size})</span>
-                                      </div>
-                                      {file.is_uploading ? (
-                                        <span className="p-1 px-2 text-black font-bold text-[10px] bg-amber-100 rounded border border-black uppercase flex items-center gap-1 animate-pulse">
-                                          <div className="w-2.5 h-2.5 rounded-full border-2 border-black border-t-transparent animate-spin" />
-                                          <span>Uploading</span>
-                                        </span>
-                                      ) : (
-                                        <span className="p-1 text-black font-bold text-[10px] bg-gray-100 rounded border border-black uppercase">
-                                          {file.type === 'pdf' ? 'View PDF' : 'Open'}
-                                        </span>
-                                      )}
-                                    </div>
-                                  )}
-                                </div>
-                              ))}
-                            </div>
-                          )}
-
-                          {/* GIF Display */}
-                          {msg.gif_url && (
-                            <div className="rounded-xl border-2 border-black overflow-hidden shadow-sm mt-1.5">
-                              <img src={resolveMediaUrl(msg.gif_url)} alt="GIF" className="max-h-52 w-auto object-cover" />
-                            </div>
-                          )}
-
-                          {/* WhatsApp-Style Full Rich Link Previews */}
-                          {(() => {
-                            const urls = extractAllUrls(msg.content, msg.media_links);
-                            if (urls.length === 0) return null;
-                            return (
-                              <div className="space-y-1.5 pt-1.5">
-                                {urls.map((link, lIdx) => (
-                                  <WhatsAppLinkPreview key={lIdx} url={link} />
-                                ))}
-                              </div>
-                            );
-                          })()}
-
-                          {/* Bottom Clean Timestamp (Double tick icon removed) */}
-                          <div className="flex items-center justify-end gap-1 mt-1 text-[9px] font-mono text-gray-500 select-none">
-                            <span>{msg.created_at}</span>
-                            {msg.is_uploading && (
-                              <Clock className="w-2.5 h-2.5 text-gray-400 animate-pulse" title="Uploading & sending..." />
-                            )}
-                          </div>
-
-                          {/* WhatsApp-Style Reaction Pills Docked at Bottom of Bubble */}
-                          {msg.reactions && Object.keys(msg.reactions).length > 0 && (
-                            <div className={`flex flex-wrap items-center gap-1 mt-1.5 -mb-2 ${isMe ? 'justify-end' : 'justify-start'}`}>
-                              {Object.entries(msg.reactions).map(([emoji, userList]) => {
-                                if (!userList || userList.length === 0) return null;
-                                const didIReact = userList.some(u => u.user_id === currentUser?.id);
-                                return (
-                                  <button
-                                    key={emoji}
-                                    type="button"
-                                    onClick={() => handleToggleReaction(msg.id, emoji)}
-                                    className={`px-1.5 py-0.5 rounded-full border text-[11px] font-black flex items-center gap-1 shadow-sm transition-transform hover:scale-110 active:scale-95 ${
-                                      didIReact
-                                        ? 'bg-popYellow text-black border-2 border-black'
-                                        : 'bg-white text-gray-800 border-black hover:bg-gray-50'
-                                    }`}
-                                    title={userList.map(u => u.username).join(', ')}
-                                  >
-                                    <span>{emoji}</span>
-                                    <span className="text-[10px]">{userList.length}</span>
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          )}
-
-                          {/* WhatsApp Action Menu on Hover (Reaction Smiley Trigger, Reply, Admin) */}
-                          <div
-                            className={`opacity-0 group-hover:opacity-100 transition-opacity absolute -top-3.5 ${
-                              isMe ? 'left-2' : 'right-2'
-                            } z-20 flex items-center gap-1`}
-                          >
-                            {/* WhatsApp-Style Hover Smiley Button Trigger */}
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setActiveReactionPickerMsgId(activeReactionPickerMsgId === msg.id ? null : msg.id);
-                              }}
-                              className="w-7 h-7 rounded-full bg-white border-2 border-black flex items-center justify-center shadow-[1px_1px_0px_#000] hover:bg-popYellow transition-transform hover:scale-110 active:scale-95 text-gray-700 hover:text-black"
-                              title="React to message"
-                            >
-                              <Smile className="w-3.5 h-3.5" />
-                            </button>
-
-                            {/* Quick Reply Button */}
-                            <button
-                              type="button"
-                              onClick={() => setReplyTarget({ id: msg.id, user_name: msg.user_name, content: msg.content })}
-                              className="w-7 h-7 rounded-full bg-white border-2 border-black flex items-center justify-center shadow-[1px_1px_0px_#000] hover:bg-popYellow transition-transform hover:scale-110 active:scale-95 text-gray-700 hover:text-black"
-                              title="Reply (or double-click bubble)"
-                            >
-                              <MessageSquare className="w-3.5 h-3.5" />
-                            </button>
-
-                            {currentUser?.is_admin && (
-                              <>
+                              {currentUser?.is_admin && (
                                 <button
                                   type="button"
                                   onClick={() => handleDeleteMessage(msg.id)}
-                                  className="w-7 h-7 rounded-full bg-white border-2 border-black flex items-center justify-center shadow-[1px_1px_0px_#000] text-red-600 hover:bg-red-50"
+                                  className="w-7 h-7 rounded-full bg-white border-2 border-black flex items-center justify-center shadow-[1px_1px_0px_#000] text-red-600 hover:bg-red-50 cursor-pointer"
                                   title="Admin: Delete"
                                 >
                                   <Trash2 className="w-3 h-3" />
                                 </button>
-                                {!isMe && (
+                              )}
+
+                              {activeReactionPickerMsgId === msg.id && (
+                                <div
+                                  className="absolute -top-12 right-0 z-30 flex items-center gap-1 bg-white border-2 border-black rounded-full px-2.5 py-1 shadow-[4px_4px_0px_#000] animate-in fade-in zoom-in-95"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  {['👍', '❤️', '😂', '😮', '😢', '🙏', '🇮🇳'].map((emoji) => (
+                                    <button
+                                      key={emoji}
+                                      type="button"
+                                      onClick={() => {
+                                        handleToggleReaction(msg.id, emoji);
+                                        setActiveReactionPickerMsgId(null);
+                                      }}
+                                      className="p-1 text-base hover:scale-140 transition-transform focus:outline-none cursor-pointer"
+                                      title={`React ${emoji}`}
+                                    >
+                                      {emoji}
+                                    </button>
+                                  ))}
+                                  <button
+                                    type="button"
+                                    onClick={() => setActiveReactionPickerMsgId(null)}
+                                    className="p-0.5 text-gray-400 hover:text-black rounded-full hover:bg-gray-100 ml-0.5"
+                                    title="Close"
+                                  >
+                                    <X className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* WhatsApp-Style Pop Art Message Bubble */}
+                          <div
+                            id={'comm_msg_' + msg.id}
+                            onTouchStart={() => handleTouchStart(msg.id)}
+                            onTouchEnd={handleTouchEnd}
+                            onTouchCancel={handleTouchEnd}
+                            onDoubleClick={() => setReplyTarget({ id: msg.id, user_name: msg.user_name, content: msg.content })}
+                            className={`relative p-2.5 sm:p-3 rounded-2xl border-2 border-black text-xs font-semibold leading-relaxed shadow-[2px_2px_0px_#000] break-words transition-all duration-300 ${
+                              isMe ? 'bg-[#DCF8C6] text-black rounded-tr-xs' : 'bg-white text-gray-900 rounded-tl-xs'
+                            } ${highlightedMsgId === msg.id ? 'ring-4 ring-popYellow bg-yellow-100 scale-[1.01]' : ''}`}
+                          >
+                            {/* WhatsApp-Style Quoted Reply Box with Jump to Message */}
+                            {msg.reply_to && (
+                              <div
+                                onClick={() => handleScrollToMessage(msg.reply_to.id || msg.reply_to.message_id)}
+                                className="mb-2 p-2 bg-black/5 hover:bg-black/10 border-l-4 border-tirangaGreen rounded-r-lg text-[11px] space-y-0.5 cursor-pointer transition-colors select-none group/quote"
+                                title="Click to jump to quoted message"
+                              >
+                                <div className="font-black text-tirangaGreen flex items-center justify-between">
+                                  <span>{msg.reply_to.user_name || msg.reply_to.sender || 'User'}</span>
+                                  <span className="text-[9px] text-gray-500 font-mono group-hover/quote:underline">↳ jump</span>
+                                </div>
+                                <div className="text-gray-600 line-clamp-2 italic font-normal">
+                                  {msg.reply_to.content || msg.reply_to.text}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Text Content with highlighted @mentions */}
+                            {msg.content && (
+                              <div className="whitespace-pre-wrap">
+                                {msg.content.split(/(@[a-zA-Z0-9_.]+)/g).map((part, pIdx) => {
+                                  if (part.startsWith('@')) {
+                                    return (
+                                      <span
+                                        key={pIdx}
+                                        className="px-1 py-0.2 bg-black text-popYellow font-mono font-bold rounded mx-0.5"
+                                      >
+                                        {part}
+                                      </span>
+                                    );
+                                  }
+                                  return part;
+                                })}
+                              </div>
+                            )}
+
+                            {/* File Attachments with In-App Media Lightbox Opener & WhatsApp Buffering */}
+                            {msg.attachments && msg.attachments.length > 0 && (
+                              <div className="space-y-1.5 pt-1.5">
+                                {msg.attachments.map((file, fIdx) => (
+                                  <div
+                                    key={fIdx}
+                                    className="rounded-xl border-2 border-black overflow-hidden bg-white shadow-sm relative group/attach"
+                                  >
+                                    {file.type === 'image' ? (
+                                      <div
+                                        onClick={() => !file.is_uploading && setActiveMediaViewer({ type: 'image', url: resolveMediaUrl(file.url), name: file.name, size: file.size })}
+                                        className="cursor-pointer relative overflow-hidden max-h-60 sm:max-h-72 md:max-h-80 lg:max-h-96 flex items-center justify-center bg-gray-50"
+                                        title={file.is_uploading ? 'Uploading to database...' : 'Tap to open high-res image'}
+                                      >
+                                        <img
+                                          src={resolveMediaUrl(file.url)}
+                                          alt={file.name}
+                                          className="max-h-60 sm:max-h-72 md:max-h-80 lg:max-h-96 w-auto max-w-full object-cover hover:scale-102 transition-transform"
+                                        />
+
+                                        {/* WhatsApp-Style Circular Buffering Animation Overlay */}
+                                        {file.is_uploading ? (
+                                          <div className="absolute inset-0 bg-black/45 backdrop-blur-[1px] flex flex-col items-center justify-center z-10 select-none">
+                                            <div className="relative w-14 h-14 bg-black/60 rounded-full border-2 border-white/20 flex items-center justify-center shadow-lg">
+                                              <div className="w-10 h-10 rounded-full border-3 border-white/20 border-t-white animate-spin" />
+                                              <div className="absolute inset-0 flex items-center justify-center">
+                                                <div className="w-2.5 h-2.5 rounded-full bg-white/90 animate-pulse" />
+                                              </div>
+                                            </div>
+                                            <span className="text-[10px] font-black text-white uppercase tracking-wider mt-2 bg-black/70 px-2.5 py-0.5 rounded-full shadow">
+                                              Uploading...
+                                            </span>
+                                          </div>
+                                        ) : (
+                                          <div className="absolute inset-0 bg-black/0 hover:bg-black/25 flex items-center justify-center transition-colors">
+                                            <Eye className="w-6 h-6 text-white opacity-0 group-hover/attach:opacity-100 transition-opacity drop-shadow" />
+                                          </div>
+                                        )}
+                                      </div>
+                                    ) : file.type === 'video' ? (
+                                      <div
+                                        onClick={() => !file.is_uploading && setActiveMediaViewer({ type: 'video', url: resolveMediaUrl(file.url), name: file.name, size: file.size })}
+                                        className="cursor-pointer relative bg-black max-h-56 sm:max-h-68 md:max-h-80 flex items-center justify-center"
+                                        title={file.is_uploading ? 'Uploading video...' : 'Tap to open in-app video player'}
+                                      >
+                                        <video className="max-h-56 sm:max-h-68 md:max-h-80 w-full object-cover opacity-80">
+                                          <source src={resolveMediaUrl(file.url)} />
+                                        </video>
+                                        {file.is_uploading ? (
+                                          <div className="absolute inset-0 bg-black/50 backdrop-blur-[1px] flex flex-col items-center justify-center z-10">
+                                            <div className="w-12 h-12 rounded-full border-3 border-white/20 border-t-white animate-spin" />
+                                            <span className="text-[10px] font-bold text-white uppercase mt-2">Uploading...</span>
+                                          </div>
+                                        ) : (
+                                          <div className="absolute inset-0 flex items-center justify-center bg-black/30 hover:bg-black/10 transition-colors">
+                                            <div className="w-12 h-12 rounded-full bg-white/95 border-2 border-black flex items-center justify-center shadow-lg">
+                                              <Play className="w-6 h-6 text-black fill-black ml-0.5" />
+                                            </div>
+                                          </div>
+                                        )}
+                                      </div>
+                                    ) : (
+                                      <div
+                                        onClick={() => !file.is_uploading && setActiveMediaViewer({ type: file.type === 'pdf' ? 'pdf' : 'file', url: resolveMediaUrl(file.url), name: file.name, size: file.size })}
+                                        className="p-2.5 flex items-center justify-between gap-3 text-xs cursor-pointer hover:bg-amber-50/50"
+                                        title={file.is_uploading ? 'Uploading file...' : (file.type === 'pdf' ? 'Tap to view PDF in app' : 'Tap to open file')}
+                                      >
+                                        <div className="flex items-center gap-2 truncate">
+                                          <FileText className="w-4 h-4 text-saffron-dark shrink-0" />
+                                          <span className="font-bold truncate">{file.name}</span>
+                                          <span className="text-[10px] text-gray-500 font-mono">({file.size})</span>
+                                        </div>
+                                        {file.is_uploading ? (
+                                          <span className="p-1 px-2 text-black font-bold text-[10px] bg-amber-100 rounded border border-black uppercase flex items-center gap-1 animate-pulse">
+                                            <div className="w-2.5 h-2.5 rounded-full border-2 border-black border-t-transparent animate-spin" />
+                                            <span>Uploading</span>
+                                          </span>
+                                        ) : (
+                                          <span className="p-1 text-black font-bold text-[10px] bg-gray-100 rounded border border-black uppercase">
+                                            {file.type === 'pdf' ? 'View PDF' : 'Open'}
+                                          </span>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+
+                            {/* GIF Display */}
+                            {msg.gif_url && (
+                              <div className="rounded-xl border-2 border-black overflow-hidden shadow-sm mt-1.5">
+                                <img src={resolveMediaUrl(msg.gif_url)} alt="GIF" className="max-h-52 w-auto object-cover" />
+                              </div>
+                            )}
+
+                            {/* WhatsApp-Style Full Rich Link Previews */}
+                            {(() => {
+                              const urls = extractAllUrls(msg.content, msg.media_links);
+                              if (urls.length === 0) return null;
+                              return (
+                                <div className="space-y-1.5 pt-1.5">
+                                  {urls.map((link, lIdx) => (
+                                    <WhatsAppLinkPreview key={lIdx} url={link} />
+                                  ))}
+                                </div>
+                              );
+                            })()}
+
+                            {/* Bottom Clean Timestamp (Double tick icon removed) */}
+                            <div className="flex items-center justify-end gap-1 mt-1 text-[9px] font-mono text-gray-500 select-none">
+                              <span>{msg.created_at}</span>
+                              {msg.is_uploading && (
+                                <Clock className="w-2.5 h-2.5 text-gray-400 animate-pulse" title="Uploading & sending..." />
+                              )}
+                            </div>
+
+                            {/* WhatsApp-Style Reaction Pills Docked at Bottom of Bubble */}
+                            {msg.reactions && Object.keys(msg.reactions).length > 0 && (
+                              <div className={`flex flex-wrap items-center gap-1 mt-1.5 -mb-2 ${isMe ? 'justify-end' : 'justify-start'}`}>
+                                {Object.entries(msg.reactions).map(([emoji, userList]) => {
+                                  if (!userList || userList.length === 0) return null;
+                                  const didIReact = userList.some(u => u.user_id === currentUser?.id);
+                                  return (
+                                    <button
+                                      key={emoji}
+                                      type="button"
+                                      onClick={() => handleToggleReaction(msg.id, emoji)}
+                                      className={`px-1.5 py-0.5 rounded-full border text-[11px] font-black flex items-center gap-1 shadow-sm transition-transform hover:scale-110 active:scale-95 ${
+                                        didIReact
+                                          ? 'bg-popYellow text-black border-2 border-black'
+                                          : 'bg-white text-gray-800 border-black hover:bg-gray-50'
+                                      }`}
+                                      title={userList.map(u => u.username).join(', ')}
+                                    >
+                                      <span>{emoji}</span>
+                                      <span className="text-[10px]">{userList.length}</span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* If !isMe: Action buttons appear AFTER message bubble (to its right) */}
+                          {!isMe && (
+                            <div
+                              className={`${
+                                activeMsgActionId === msg.id
+                                  ? 'opacity-100 pointer-events-auto'
+                                  : 'opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto'
+                              } transition-opacity z-20 flex items-center gap-1 shrink-0 relative select-none`}
+                            >
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActiveReactionPickerMsgId(activeReactionPickerMsgId === msg.id ? null : msg.id);
+                                }}
+                                className="w-7 h-7 rounded-full bg-white border-2 border-black flex items-center justify-center shadow-[1px_1px_0px_#000] hover:bg-popYellow transition-transform hover:scale-110 active:scale-95 text-gray-700 hover:text-black cursor-pointer"
+                                title="React to message"
+                              >
+                                <Smile className="w-3.5 h-3.5" />
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => setReplyTarget({ id: msg.id, user_name: msg.user_name, content: msg.content })}
+                                className="w-7 h-7 rounded-full bg-white border-2 border-black flex items-center justify-center shadow-[1px_1px_0px_#000] hover:bg-popYellow transition-transform hover:scale-110 active:scale-95 text-gray-700 hover:text-black cursor-pointer"
+                                title="Reply (or double-click bubble)"
+                              >
+                                <MessageSquare className="w-3.5 h-3.5" />
+                              </button>
+
+                              {currentUser?.is_admin && (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteMessage(msg.id)}
+                                    className="w-7 h-7 rounded-full bg-white border-2 border-black flex items-center justify-center shadow-[1px_1px_0px_#000] text-red-600 hover:bg-red-50 cursor-pointer"
+                                    title="Admin: Delete"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                  </button>
                                   <button
                                     type="button"
                                     onClick={() => handleBanUserAndIp(msg.user_id, msg.username)}
-                                    className="w-7 h-7 rounded-full bg-white border-2 border-black flex items-center justify-center shadow-[1px_1px_0px_#000] text-black hover:bg-rose-100 hover:text-red-700"
+                                    className="w-7 h-7 rounded-full bg-white border-2 border-black flex items-center justify-center shadow-[1px_1px_0px_#000] text-black hover:bg-rose-100 hover:text-red-700 cursor-pointer"
                                     title="Admin: Ban User & Block IP"
                                   >
                                     <Ban className="w-3 h-3" />
                                   </button>
-                                )}
-                              </>
-                            )}
-                          </div>
+                                </>
+                              )}
 
-                          {/* WhatsApp Popover: 7 Quick Emojis shown when smiley trigger is clicked */}
-                          {activeReactionPickerMsgId === msg.id && (
-                            <div
-                              className={`absolute -top-12 ${
-                                isMe ? 'left-2' : 'right-2'
-                              } z-30 flex items-center gap-1 bg-white border-2 border-black rounded-full px-2.5 py-1 shadow-[4px_4px_0px_#000] animate-in fade-in zoom-in-95`}
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              {['👍', '❤️', '😂', '😮', '😢', '🙏', '🇮🇳'].map((emoji) => (
-                                <button
-                                  key={emoji}
-                                  type="button"
-                                  onClick={() => {
-                                    handleToggleReaction(msg.id, emoji);
-                                    setActiveReactionPickerMsgId(null);
-                                  }}
-                                  className="p-1 text-base hover:scale-140 transition-transform focus:outline-none"
-                                  title={`React ${emoji}`}
+                              {activeReactionPickerMsgId === msg.id && (
+                                <div
+                                  className="absolute -top-12 left-0 z-30 flex items-center gap-1 bg-white border-2 border-black rounded-full px-2.5 py-1 shadow-[4px_4px_0px_#000] animate-in fade-in zoom-in-95"
+                                  onClick={(e) => e.stopPropagation()}
                                 >
-                                  {emoji}
-                                </button>
-                              ))}
-                              <button
-                                type="button"
-                                onClick={() => setActiveReactionPickerMsgId(null)}
-                                className="p-0.5 text-gray-400 hover:text-black rounded-full hover:bg-gray-100 ml-0.5"
-                                title="Close"
-                              >
-                                <X className="w-3 h-3" />
-                              </button>
+                                  {['👍', '❤️', '😂', '😮', '😢', '🙏', '🇮🇳'].map((emoji) => (
+                                    <button
+                                      key={emoji}
+                                      type="button"
+                                      onClick={() => {
+                                        handleToggleReaction(msg.id, emoji);
+                                        setActiveReactionPickerMsgId(null);
+                                      }}
+                                      className="p-1 text-base hover:scale-140 transition-transform focus:outline-none cursor-pointer"
+                                      title={`React ${emoji}`}
+                                    >
+                                      {emoji}
+                                    </button>
+                                  ))}
+                                  <button
+                                    type="button"
+                                    onClick={() => setActiveReactionPickerMsgId(null)}
+                                    className="p-0.5 text-gray-400 hover:text-black rounded-full hover:bg-gray-100 ml-0.5"
+                                    title="Close"
+                                  >
+                                    <X className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              )}
                             </div>
                           )}
                         </div>
@@ -3483,43 +3649,115 @@ export default function CommunityPage({ onSelectPage }) {
               </div>
             </div>
 
-            <form onSubmit={handleUpdateUsername} className="space-y-3 text-xs">
-              <div className="font-black uppercase text-gray-800">Customize Your Username</div>
-              <p className="text-[11px] text-gray-600">
-                You can change your username here. Only letters, numbers, dot (<code>.</code>) and underscore (<code>_</code>) allowed.
-              </p>
+            {/* Customize Display Name (Max 3 Changes for normal users, unlimited for admin) */}
+            {(() => {
+              const isCurrentUserAdmin = currentUser?.is_admin || currentUser?.email === 'omkumar.working@gmail.com';
+              const nameChangesLeft = Math.max(0, 3 - (currentUser?.name_change_count || 0));
+              const usernameChangesLeft = Math.max(0, 3 - (currentUser?.username_change_count || 0));
 
-              {usernameUpdateMsg && (
-                <div className={`p-2.5 border-2 border-black rounded-xl font-bold text-xs ${
-                  usernameUpdateMsg.startsWith('✓') ? 'bg-green-100 text-green-900' : 'bg-red-100 text-red-900'
-                }`}>
-                  {usernameUpdateMsg}
-                </div>
-              )}
+              return (
+                <>
+                  <form onSubmit={handleUpdateName} className="space-y-3 text-xs border-t-2 border-dashed border-gray-200 pt-3">
+                    <div className="flex items-center justify-between">
+                      <div className="font-black uppercase text-gray-800">Customize Your Display Name</div>
+                      {isCurrentUserAdmin ? (
+                        <span className="text-[10px] font-mono font-black text-tirangaGreen bg-green-50 px-2 py-0.5 rounded border border-green-300">
+                          Admin: Unlimited Changes
+                        </span>
+                      ) : (
+                        <span className={`text-[10px] font-mono font-black px-2 py-0.5 rounded border ${
+                          nameChangesLeft === 0 ? 'bg-red-50 text-red-700 border-red-300' : 'bg-gray-100 text-gray-800 border-gray-300'
+                        }`}>
+                          {nameChangesLeft}/3 changes left
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-gray-600">
+                      Current display name: <strong>{currentUser.name}</strong>. Users are capped at 3 total name updates.
+                    </p>
 
-              <div className="flex gap-2">
-                <span className="p-2.5 bg-gray-100 border-2 border-black rounded-xl font-mono font-bold text-xs flex items-center">
-                  @
-                </span>
-                <input
-                  type="text"
-                  placeholder="new_username"
-                  value={newUsernameInput}
-                  onChange={(e) => setNewUsernameInput(e.target.value)}
-                  className="flex-1 px-3.5 py-2 bg-gray-50 border-2 border-black rounded-xl font-mono font-bold text-xs focus:bg-white focus:outline-none"
-                />
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-saffron hover:bg-saffron-dark text-black border-2 border-black rounded-xl font-black uppercase text-xs shadow-[2px_2px_0px_#000]"
-                >
-                  Save
-                </button>
-              </div>
+                    {nameUpdateMsg && (
+                      <div className={`p-2.5 border-2 border-black rounded-xl font-bold text-xs ${
+                        nameUpdateMsg.startsWith('✓') ? 'bg-green-100 text-green-900' : 'bg-red-100 text-red-900'
+                      }`}>
+                        {nameUpdateMsg}
+                      </div>
+                    )}
 
-              <div className="p-2.5 bg-red-50 border border-black rounded-xl text-[10px] text-red-800 font-bold">
-                🔒 Security Note: Usernames containing names of BJP politicians, Modi, Hindu gods or admin terms are forbidden by system policy.
-              </div>
-            </form>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        placeholder="new display name"
+                        disabled={!isCurrentUserAdmin && nameChangesLeft === 0}
+                        value={newNameInput}
+                        onChange={(e) => setNewNameInput(e.target.value)}
+                        className="flex-1 px-3.5 py-2 bg-gray-50 border-2 border-black rounded-xl font-bold text-xs focus:bg-white focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+                      />
+                      <button
+                        type="submit"
+                        disabled={!isCurrentUserAdmin && nameChangesLeft === 0}
+                        className="px-4 py-2 bg-saffron hover:bg-saffron-dark text-black border-2 border-black rounded-xl font-black uppercase text-xs shadow-[2px_2px_0px_#000] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                      >
+                        Save
+                      </button>
+                    </div>
+                  </form>
+
+                  <form onSubmit={handleUpdateUsername} className="space-y-3 text-xs border-t-2 border-dashed border-gray-200 pt-3">
+                    <div className="flex items-center justify-between">
+                      <div className="font-black uppercase text-gray-800">Customize Your Username</div>
+                      {isCurrentUserAdmin ? (
+                        <span className="text-[10px] font-mono font-black text-tirangaGreen bg-green-50 px-2 py-0.5 rounded border border-green-300">
+                          Admin: Unlimited Changes
+                        </span>
+                      ) : (
+                        <span className={`text-[10px] font-mono font-black px-2 py-0.5 rounded border ${
+                          usernameChangesLeft === 0 ? 'bg-red-50 text-red-700 border-red-300' : 'bg-gray-100 text-gray-800 border-gray-300'
+                        }`}>
+                          {usernameChangesLeft}/3 changes left
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-gray-600">
+                      Current username: <strong>@{currentUser.username}</strong>. Only letters, numbers, dot (<code>.</code>) and underscore (<code>_</code>) allowed.
+                    </p>
+
+                    {usernameUpdateMsg && (
+                      <div className={`p-2.5 border-2 border-black rounded-xl font-bold text-xs ${
+                        usernameUpdateMsg.startsWith('✓') ? 'bg-green-100 text-green-900' : 'bg-red-100 text-red-900'
+                      }`}>
+                        {usernameUpdateMsg}
+                      </div>
+                    )}
+
+                    <div className="flex gap-2">
+                      <span className="p-2.5 bg-gray-100 border-2 border-black rounded-xl font-mono font-bold text-xs flex items-center">
+                        @
+                      </span>
+                      <input
+                        type="text"
+                        placeholder="new_username"
+                        disabled={!isCurrentUserAdmin && usernameChangesLeft === 0}
+                        value={newUsernameInput}
+                        onChange={(e) => setNewUsernameInput(e.target.value)}
+                        className="flex-1 px-3.5 py-2 bg-gray-50 border-2 border-black rounded-xl font-mono font-bold text-xs focus:bg-white focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+                      />
+                      <button
+                        type="submit"
+                        disabled={!isCurrentUserAdmin && usernameChangesLeft === 0}
+                        className="px-4 py-2 bg-saffron hover:bg-saffron-dark text-black border-2 border-black rounded-xl font-black uppercase text-xs shadow-[2px_2px_0px_#000] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                      >
+                        Save
+                      </button>
+                    </div>
+
+                    <div className="p-2.5 bg-red-50 border border-black rounded-xl text-[10px] text-red-800 font-bold">
+                      🔒 Security Note: Usernames containing names of BJP politicians, Modi, Hindu gods or admin terms are forbidden by system policy.
+                    </div>
+                  </form>
+                </>
+              );
+            })()}
 
           </div>
         </div>

@@ -35,24 +35,24 @@ const DEFAULT_CATEGORIES = [
   'International'
 ];
 
+export const parseOtherLinks = (raw) => {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw.filter(Boolean);
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed.filter(Boolean);
+      return [raw];
+    } catch (e) {
+      return raw.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
+    }
+  }
+  return [];
+};
+
 export default function NationalistPage({ onOpenSuggest, onNavigatePropagandus, onOpenShareCard, reloadTrigger }) {
   const { t } = useLanguage();
   const [influencers, setInfluencers] = useState([]);
-
-  const parseOtherLinks = (raw) => {
-    if (!raw) return [];
-    if (Array.isArray(raw)) return raw.filter(Boolean);
-    if (typeof raw === 'string') {
-      try {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) return parsed.filter(Boolean);
-        return [raw];
-      } catch (e) {
-        return raw.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
-      }
-    }
-    return [];
-  };
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [categories, setCategories] = useState(DEFAULT_CATEGORIES);

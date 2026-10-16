@@ -28,6 +28,7 @@ export default function SubmitModal({ isOpen, onClose, onSuccess }) {
   const [contactPhone, setContactPhone] = useState('');
   const [contactEmail, setContactEmail] = useState('');
   const [avatarUrl, setAvatarUrl] = useState('');
+  const [availableCategories, setAvailableCategories] = useState(ENTITY_CATEGORIES);
   const [selectedCategories, setSelectedCategories] = useState(['Social Media']);
   const [party, setParty] = useState(OPPOSITION_PARTIES[0]);
   const [institution, setInstitution] = useState(OPPOSITION_INSTITUTIONS[0]);
@@ -39,6 +40,21 @@ export default function SubmitModal({ isOpen, onClose, onSuccess }) {
   const [submitting, setSubmitting] = useState(false);
   const [patriotWarning, setPatriotWarning] = useState(null);
   const [countdown, setCountdown] = useState(8);
+
+  useEffect(() => {
+    fetch('/api/categories')
+      .then(r => r.json())
+      .then(data => {
+        if (Array.isArray(data) && data.length > 0) {
+          const defaultIds = new Set(ENTITY_CATEGORIES.map(c => c.id));
+          const dynamic = data
+            .filter(d => (d.type === 'entity' || !d.type) && d.name && !defaultIds.has(d.name))
+            .map(d => ({ id: d.name, label: d.name, icon: 'Share2' }));
+          setAvailableCategories([...ENTITY_CATEGORIES, ...dynamic]);
+        }
+      })
+      .catch(() => {});
+  }, [isOpen]);
 
   const audioRef = useRef(null);
   const speechRef = useRef(null);
@@ -667,7 +683,7 @@ export default function SubmitModal({ isOpen, onClose, onSuccess }) {
               Categories (Choose 1 to 4)
             </label>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
-              {ENTITY_CATEGORIES.map(cat => {
+              {availableCategories.map(cat => {
                 const isSelected = selectedCategories.includes(cat.id);
                 return (
                   <button

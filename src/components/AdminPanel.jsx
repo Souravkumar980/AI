@@ -904,21 +904,51 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
 
   const handleSearchInvidious = async (e) => {
     if (e) e.preventDefault();
-    if (!invidiousSearchQuery.trim()) return;
+    const query = invidiousSearchQuery.trim();
+    if (!query) return;
     setIsSearchingInvidious(true);
     try {
-      const res = await fetch(`/api/admin/playlist/search?q=${encodeURIComponent(invidiousSearchQuery.trim())}`, {
+      // 1. Check if user entered a direct YouTube URL or 11-char video ID
+      let directId = null;
+      const urlMatch = query.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([a-zA-Z0-9_-]{11})/);
+      if (urlMatch) {
+        directId = urlMatch[1];
+      } else if (/^[a-zA-Z0-9_-]{11}$/.test(query)) {
+        directId = query;
+      }
+
+      if (directId) {
+        try {
+          const oeRes = await fetch(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${directId}&format=json`);
+          if (oeRes.ok) {
+            const oe = await oeRes.json();
+            setInvidiousResults([{
+              videoId: directId,
+              title: oe.title || `YouTube Video (${directId})`,
+              author: oe.author_name || 'Artist',
+              duration: '3:30',
+              thumbnailUrl: `https://i.ytimg.com/vi/${directId}/hqdefault.jpg`
+            }]);
+            setIsSearchingInvidious(false);
+            return;
+          }
+        } catch (eOe) {}
+      }
+
+      // 2. Query backend search endpoint
+      const res = await fetch(`/api/admin/playlist/search?q=${encodeURIComponent(query)}`, {
         headers: { 'x-admin-key': adminToken }
       });
       if (res.ok) {
         const data = await res.json();
-        setInvidiousResults(Array.isArray(data) ? data : []);
-        if (data.length === 0) showToast('No songs found on Invidious. Try different keywords.');
+        const results = Array.isArray(data) ? data : [];
+        setInvidiousResults(results);
+        if (results.length === 0) showToast('No songs found. You can also paste direct YouTube URL or Video ID.');
       } else {
-        showToast('Invidious search error.');
+        showToast('Search query error. Try pasting direct YouTube URL.');
       }
     } catch (e) {
-      showToast('Search request failed.');
+      showToast('Search request failed. You can paste direct video URL.');
     } finally {
       setIsSearchingInvidious(false);
     }
@@ -3099,37 +3129,71 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
                       </div>
                     ) : (
                       <div className="divide-y divide-gray-200">
-                        {(shieldData?.attempts || []).map((att) => (
-                          <div key={att.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-                            <div className="space-y-1">
-                              <div className="flex items-center gap-2">
-                                <span className="bg-red-600 text-white px-2 py-0.5 rounded font-mono text-[10px] font-black">
-                                  BLOCKED ATTEMPT
-                                </span>
-                                <span className="font-bold text-black text-sm">
-                                  Target: "{att.attempted_name}"
-                                </span>
+                        {(shieldData?.attempts || []).map((att) => {
+                          const isInspectAttempt = (att.attempted_name || '').toLowerCase().includes('inspect') || (att.attempted_name || '').toLowerCase().includes('devtools');
+                          return (
+                            <div key={att.id} className={`p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs ${isInspectAttempt ? 'bg-red-50/70 border-l-4 border-red-600' : ''}`}>
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-2">
+                                  <span className={`px-2 py-0.5 rounded font-mono text-[10px] font-black ${
+                                    isInspectAttempt ? 'bg-red-700 text-white animate-pulse' : 'bg-red-600 text-white'
+                                  }`}>
+                                    {isInspectAttempt ? '🚨 DEVTOOLS INSPECT ATTEMPT' : 'BLOCKED ATTEMPT'}
+                                  </span>
+                                  <span className="font-bold text-black text-sm">
+                                    {isInspectAttempt ? '⚠️ User tried to inspect the site' : `Target: "${att.attempted_name}"`}
+                                  </span>
+                                </div>
+                                <div className="text-gray-500 font-mono text-[11px]">
+                                  Offending IP: <strong className="text-red-700">{att.ip}</strong> • {new Date(att.created_at).toLocaleString()}
+                                </div>
+                                <div className="text-gray-600 font-display text-[11px]">
+                                  Details: {att.details}
+                                </div>
                               </div>
-                              <div className="text-gray-500 font-mono text-[11px]">
-                                Offending IP: <strong className="text-red-700">{att.ip}</strong> • {new Date(att.created_at).toLocaleString()}
-                              </div>
-                              <div className="text-gray-600 font-display text-[11px]">
-                                Details: {att.details}
+
+                              <div className="flex items-center gap-2 self-start sm:self-auto">
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    if (window.confirm(`Permanently block IP ${att.ip}? They will receive a blank page and literally nothing will show.`)) {
+                                      try {
+                                        const res = await fetch('/api/admin/security/block', {
+                                          method: 'POST',
+                                          headers: { 'Content-Type': 'application/json', 'x-admin-key': adminToken },
+                                          body: JSON.stringify({ ip: att.ip, reason: isInspectAttempt ? 'DevTools Inspect attempt' : `Hostile submission: ${att.attempted_name}` })
+                                        });
+                                        if (res.ok) {
+                                          showToast(`✓ IP ${att.ip} banned permanently.`);
+                                          loadShieldAttempts();
+                                        } else {
+                                          showToast('Failed to block IP.');
+                                        }
+                                      } catch (err) {
+                                        showToast('Error blocking IP.');
+                                      }
+                                    }
+                                  }}
+                                  className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-black shadow-sm flex items-center gap-1 active:translate-y-0.5"
+                                >
+                                  <Ban className="w-3.5 h-3.5" />
+                                  <span>Ban IP Now</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setBlockIpInput(att.ip);
+                                    setBlockReasonInput(isInspectAttempt ? `DevTools inspect attempt: ${att.details}` : `Hostile submission: ${att.attempted_name}`);
+                                    setActiveTab('security');
+                                  }}
+                                  className="px-2.5 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-800 border border-gray-400 rounded-lg text-xs font-bold"
+                                >
+                                  Manage IP
+                                </button>
                               </div>
                             </div>
-
-                            <button
-                              onClick={() => {
-                                setBlockIpInput(att.ip);
-                                setBlockReasonInput(`Attempted hostile submission of national figure: ${att.attempted_name}`);
-                                setActiveTab('security');
-                              }}
-                              className="px-3 py-1.5 bg-red-100 hover:bg-red-200 text-red-900 border border-red-400 rounded-lg text-xs font-bold self-start sm:self-auto"
-                            >
-                              Manage / Blacklist IP
-                            </button>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </div>

@@ -16,7 +16,7 @@ import CommunityPage from './components/CommunityPage';
 import DonateModal from './components/DonateModal';
 import Footer from './components/Footer';
 import SuggestFeatureSection from './components/SuggestFeatureSection';
-import { DevToolsShield, GeoRestrictionShield } from './components/SecurityShields';
+import { DevToolsShield, GeoRestrictionShield, AuthenticBrowserShield } from './components/SecurityShields';
 import { MusicPlayerProvider } from './components/MusicPlayer';
 import confetti from 'canvas-confetti';
 import { PlusCircle, Award } from 'lucide-react';
@@ -239,8 +239,9 @@ export default function App() {
 
   return (
     <MusicPlayerProvider>
-      {/* DevTools Inspect Shield & Sovereign Geofencing Shield */}
+      {/* DevTools Inspect Shield & Sovereign Geofencing Shield & Authentic Browser Shield */}
       <DevToolsShield />
+      <AuthenticBrowserShield />
       <GeoRestrictionShield />
 
       <div className={`${currentPage === 'community' ? 'h-[100dvh] max-h-[100dvh] overflow-hidden' : 'min-h-screen'} flex flex-col bg-[#FDFBF7] text-black selection:bg-saffron selection:text-black overflow-x-hidden`}>
