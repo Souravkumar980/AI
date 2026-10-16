@@ -398,11 +398,11 @@ export default function TheGovtPage({ onOpenShareCard }) {
 
   // 2029 Mega Mandate Poll State
   const [pollData, setPollData] = useState({
-    yesVotes: 28491,
-    noVotes: 3120,
-    totalVotes: 31611,
-    yesPercent: 90,
-    noPercent: 10,
+    yesVotes: 0,
+    noVotes: 0,
+    totalVotes: 0,
+    yesPercent: 0,
+    noPercent: 0,
     userVoted: null,
     votedAt: null
   });

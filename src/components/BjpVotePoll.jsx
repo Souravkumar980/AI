@@ -8,10 +8,10 @@ export default function BjpVotePoll() {
   const [pollData, setPollData] = useState({
     pollId: 'bjp_2029',
     question: 'Do you want BJP / NDA back in 2029?',
-    yesVotes: 35453500,
-    noVotes: 2500,
-    totalVotes: 35456000,
-    yesPercent: 100,
+    yesVotes: 0,
+    noVotes: 0,
+    totalVotes: 0,
+    yesPercent: 0,
     noPercent: 0,
     userVoted: null,
     votedAt: null

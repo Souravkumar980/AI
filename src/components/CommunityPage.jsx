@@ -288,116 +288,27 @@ function WhatsAppLinkPreview({ url }) {
   );
 }
 
-// Initial Seed Users for Community
+// Initial Seed Users for Community (Admin credentials only)
 const SEED_USERS = [
   {
     id: 'usr_admin',
-    name: 'Om Kumar (Commander)',
+    name: 'Om Kumar (Admin)',
     username: 'omkumar_admin',
     email: 'omkumar.working@gmail.com',
     phone: '9876543210',
     avatar_url: 'https://api.dicebear.com/7.x/bottts/svg?seed=OmKumarAdmin',
-    verified_type: 'influencer', // Golden tick
+    verified_type: 'influencer',
     is_admin: true,
-    created_at: '2025-01-01'
-  },
-  {
-    id: 'usr_gaurav',
-    name: 'Major Gaurav Arya',
-    username: 'gauravarya_official',
-    email: 'gaurav.arya@gmail.com',
-    phone: '9811223344',
-    avatar_url: 'https://unavatar.io/x/majorgauravarya',
-    verified_type: 'influencer', // Golden tick
-    is_admin: false,
-    created_at: '2025-01-10'
-  },
-  {
-    id: 'usr_rahul',
-    name: 'Rahul Sharma',
-    username: 'rahul89_sd',
-    email: 'rahul.sharma@gmail.com',
-    phone: '9922334455',
-    avatar_url: 'https://api.dicebear.com/7.x/bottts/svg?seed=RahulSharma',
-    verified_type: 'none', // Simple regular ID (no tick) by default
-    is_admin: false,
-    created_at: '2025-02-01'
+    created_at: '2026-10-16'
   }
 ];
 
-// Seed Public Chat Messages
-const SEED_MESSAGES = [
-  {
-    id: 'msg_1',
-    channel_id: 'public',
-    user_id: 'usr_admin',
-    user_name: 'Om Kumar (Commander)',
-    username: 'omkumar_admin',
-    user_avatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=OmKumarAdmin',
-    verified_type: 'influencer',
-    content: 'Welcome to the Exposed Propagandus Sovereign Community! Jai Hind 🇮🇳. Share factual intel, flag toolkit narratives, and build our patriotic network. Respect our cultural heritage.',
-    attachments: [],
-    media_links: [],
-    gif_url: null,
-    created_at: new Date(Date.now() - 3600000 * 5).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-  },
-  {
-    id: 'msg_2',
-    channel_id: 'public',
-    user_id: 'usr_gaurav',
-    user_name: 'Major Gaurav Arya',
-    username: 'gauravarya_official',
-    user_avatar: 'https://unavatar.io/x/majorgauravarya',
-    verified_type: 'influencer',
-    content: 'Information warfare is fought in the minds of our citizens. Great to have this direct channel. Tag me @gauravarya_official for strategic border security updates.',
-    attachments: [],
-    media_links: ['https://www.youtube.com/watch?v=dQw4w9WgXcQ'],
-    gif_url: null,
-    created_at: new Date(Date.now() - 3600000 * 3).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-  },
-  {
-    id: 'msg_3',
-    channel_id: 'public',
-    user_id: 'usr_rahul',
-    user_name: 'Rahul Sharma',
-    username: 'rahul89_sd',
-    user_avatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=RahulSharma',
-    verified_type: 'citizen',
-    content: 'Namaste @omkumar_admin! Testing file upload and tagging feature. Jai Bharat!',
-    attachments: [],
-    media_links: [],
-    gif_url: null,
-    created_at: new Date(Date.now() - 3600000 * 1).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-  }
-];
+// Seed Public Chat Messages - Clean Zero Initial State
+const SEED_MESSAGES = [];
 
 // Seed Channels
-const SEED_CHANNELS = [
-  {
-    id: 'chn_def_intel',
-    creator_id: 'usr_admin',
-    creator_name: 'Om Kumar',
-    creator_username: 'omkumar_admin',
-    name: 'National Defense & LAC Intel',
-    description: 'Private closed room for strategic border intelligence analysts.',
-    join_token: 'lac-intel-8921',
-    is_private: 1,
-    members: ['usr_admin', 'usr_gaurav'],
-    pending_requests: []
-  },
-  {
-    id: 'chn_cyber_shield',
-    creator_id: 'usr_gaurav',
-    creator_name: 'Major Gaurav Arya',
-    creator_username: 'gauravarya_official',
-    name: 'Cyber Toolkit Busting Unit',
-    description: 'Deconstructing bot farms and foreign disinfo campaigns.',
-    join_token: 'cyber-bust-4412',
-    is_private: 1,
-    members: ['usr_gaurav', 'usr_admin'],
-    pending_requests: []
-  }
-];
+// Seed Channels - Clean Zero Initial State
+const SEED_CHANNELS = [];
 
 export default function CommunityPage({ onSelectPage }) {
   // Current logged in community user
@@ -947,7 +858,7 @@ export default function CommunityPage({ onSelectPage }) {
         token = fullUrl.split('join=')[1].split('&')[0].split('#')[0];
       }
       if (token) {
-        const found = channels.find(c => c.join_token === token);
+        const found = channels.find(c => c.join_token === token || c.id === token);
         if (found) {
           if (!currentUser) {
             setIsAuthModalOpen(true);
@@ -1691,6 +1602,9 @@ export default function CommunityPage({ onSelectPage }) {
     const files = Array.from(e.target.files);
     if (!files || files.length === 0) return;
 
+    // Reset previous text in chat bar so attachment does not send stale previous message
+    setInputText('');
+
     for (const file of files) {
       if (file.size > 10 * 1024 * 1024) {
         alert(`File "${file.name}" is too large (${(file.size / (1024 * 1024)).toFixed(1)}MB). Maximum allowed file size is 10MB!`);
@@ -1818,8 +1732,11 @@ export default function CommunityPage({ onSelectPage }) {
       if (res.ok) {
         const data = await res.json();
         if (data.channel) {
-          setChannels(prev => prev.map(c => c.id === newChan.id ? data.channel : c));
-          broadcastCrossTab({ type: 'CHANNEL_UPDATE', channel_id: newChan.id });
+          const finalChan = data.channel;
+          setActiveChannelObj(finalChan);
+          setActiveChatRoom(finalChan.id);
+          setChannels(prev => [finalChan, ...prev.filter(c => c.id !== newChan.id && c.id !== finalChan.id)]);
+          broadcastCrossTab({ type: 'CHANNEL_UPDATE', channel_id: finalChan.id });
         }
       }
     } catch {}
@@ -2671,7 +2588,8 @@ export default function CommunityPage({ onSelectPage }) {
             {activeChannelObj && (
               <button
                 onClick={() => {
-                  const link = `${window.location.origin}/?page=community&join=${activeChannelObj.join_token}`;
+                  const token = activeChannelObj.join_token || activeChannelObj.id;
+                  const link = `${window.location.origin}/?page=community&join=${encodeURIComponent(token)}`;
                   navigator.clipboard.writeText(link);
                   alert(`✓ Channel invite link copied to clipboard!\nShare this with friends: ${link}`);
                 }}

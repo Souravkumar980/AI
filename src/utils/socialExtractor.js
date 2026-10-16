@@ -160,10 +160,34 @@ export async function autoFetchSocialProfile(inputUrl, platformHint = 'auto') {
   } else if (platform === 'yt' && handle) {
     extractedAvatar = `https://unavatar.io/youtube/@${handle}`;
   } else if (platform === 'insta' && handle) {
-    // Unavatar requires paid pro plan for Instagram (returns 403).
-    // Use high-resolution Instagram-branded gradient avatar with user initials/handle
-    const safeName = extractedName || handle;
-    extractedAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(safeName)}&background=E1306C&color=ffffff&size=512&bold=true&font-size=0.38`;
+    // Cross-platform public lookup for creators across Instagram/X/YouTube
+    try {
+      const candidates = [handle, handle.replace(/([a-z])([A-Z])/g, '$1_$2')];
+      for (const h of candidates) {
+        const fxRes = await fetch(`https://api.fxtwitter.com/${encodeURIComponent(h)}`);
+        if (fxRes.ok) {
+          const fxData = await fxRes.json();
+          if (fxData && fxData.code === 200 && fxData.user) {
+            const u = fxData.user;
+            if (u.name) extractedName = u.name;
+            if (u.avatar_url) {
+              extractedAvatar = u.avatar_url.replace('_normal.', '_400x400.');
+            }
+            if (typeof u.followers === 'number') {
+              if (u.followers >= 1000000) extractedFollowers = (u.followers / 1000000).toFixed(2) + 'M followers';
+              else if (u.followers >= 1000) extractedFollowers = (u.followers / 1000).toFixed(1) + 'K followers';
+              else extractedFollowers = u.followers + ' followers';
+            }
+            break;
+          }
+        }
+      }
+    } catch (e) {}
+
+    if (!extractedAvatar) {
+      const safeName = extractedName || handle;
+      extractedAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(safeName)}&background=E1306C&color=ffffff&size=512&bold=true&font-size=0.38`;
+    }
   } else {
     extractedAvatar = `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(handle || raw)}`;
   }

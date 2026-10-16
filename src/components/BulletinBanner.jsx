@@ -2,9 +2,9 @@ import React, { useState, useEffect } from 'react';
 
 export default function BulletinBanner() {
   const [bulletin, setBulletin] = useState({
-    is_active: 1,
-    title: '⚡ LIVE BULLETIN',
-    message: 'Patriotic Alert: Counter anti-national propaganda on social media with verified facts, civilizational unity, and unwavering national resolve. Bharat Mata ki Jai! 🇮🇳'
+    is_active: 0,
+    title: '',
+    message: ''
   });
   const [isLoading, setIsLoading] = useState(true);
 

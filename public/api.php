@@ -463,14 +463,6 @@ if ($pdo) {
             created_at VARCHAR(64) NOT NULL
         );");
 
-        $chkTrk = $pdo->query("SELECT COUNT(*) as cnt FROM playlist_tracks")->fetch();
-        if ($chkTrk && (int)$chkTrk['cnt'] === 0) {
-            $stmtTrk = $pdo->prepare("INSERT INTO playlist_tracks (id, title, video_id, author, thumbnail_url, duration, is_active, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)");
-            $stmtTrk->execute(['track-1', 'Aarambh Hai Prachand (आरंभ है प्रचंड)', 'gg1tN-gkcwk', 'Piyush Mishra', 'https://i.ytimg.com/vi/gg1tN-gkcwk/hqdefault.jpg', '4:46', 1, $now]);
-            $stmtTrk->execute(['track-2', 'Teri Mitti - Kesari | Akshay Kumar', 'wF_B_aagLfI', 'B Praak', 'https://i.ytimg.com/vi/wF_B_aagLfI/hqdefault.jpg', '5:14', 2, $now]);
-            $stmtTrk->execute(['track-3', 'Maa Tujhe Salaam - Vande Mataram', 'jDn2bn7_YSM', 'A.R. Rahman', 'https://i.ytimg.com/vi/jDn2bn7_YSM/hqdefault.jpg', '6:12', 3, $now]);
-        }
-
         // Site Visitors & Traffic Logs tables
         $pdo->exec("CREATE TABLE IF NOT EXISTS site_visitors (
             ip VARCHAR(64) NOT NULL PRIMARY KEY,
@@ -526,27 +518,6 @@ if ($pdo) {
             created_at VARCHAR(64) NOT NULL,
             updated_at VARCHAR(64) NOT NULL
         );");
-
-        $chkPosts = $pdo->query("SELECT COUNT(*) as cnt FROM admin_posts")->fetch();
-        if ($chkPosts && (int)$chkPosts['cnt'] === 0) {
-            $stmtPost = $pdo->prepare("INSERT INTO admin_posts (id, title, content, image_url, badge, is_pinned, likes, views, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-            $stmtPost->execute([
-                'post-1',
-                '🚨 Ground Intel: Toolkit Networks & Coordinated Disinformation Busted',
-                'Multiple synchronized handles originating from offshore proxies have been detected attempting to flood the directory with defaming entries against sovereign nationalist leadership. The automated anti-bot shield and honeypot traps have permanently blacklisted hostile IP addresses. Rashtra Hit Sarvopari 🇮🇳.',
-                'https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?auto=format&fit=crop&w=1200&q=80',
-                '🚨 BREAKING ALERT',
-                1, 284, 1450, $now, $now
-            ]);
-            $stmtPost->execute([
-                'post-2',
-                '🇮🇳 Special Fact Dispatch: India Crosses ₹21,000 Crore in Indigenous Defence Exports',
-                'Under NDA, India has transformed from the world\'s largest arms importer into a premier global defence exporter to over 85 nations. The induction of indigenous Tejas Mk1A, INS Vikrant, and BrahMos supersonic cruise missiles marks the permanent end of foreign dependency.',
-                'https://images.unsplash.com/photo-1541185933-ef5d8ed016c2?auto=format&fit=crop&w=1200&q=80',
-                '🇮🇳 NATIONAL DISPATCH',
-                0, 419, 2310, $now, $now
-            ]);
-        }
 
         // Community Users table
         $pdo->exec("CREATE TABLE IF NOT EXISTS community_users (
@@ -1234,9 +1205,9 @@ if (preg_match('/^nationalist-influencers\/([a-zA-Z0-9_-]+)\/upvote$/', $endpoin
 // Viksit Bharat Govt Poll (GET)
 if ($endpoint === 'govt-poll') {
     $pollId = 'bjp_2029';
-    $yesVotes = 28490;
-    $noVotes = 3120;
-    $question = 'Will Bharat Achieve a $7 Trillion Economy by 2030 Under Nationalist Leadership?';
+    $yesVotes = 0;
+    $noVotes = 0;
+    $question = 'Do you want BJP / NDA back in 2029?';
     $userVoted = null;
 
     if ($pdo) {
@@ -1287,8 +1258,8 @@ if ($endpoint === 'govt-poll/vote') {
         exit;
     }
 
-    $yesVotes = 28490;
-    $noVotes = 3120;
+    $yesVotes = 0;
+    $noVotes = 0;
 
     if ($pdo) {
         try {

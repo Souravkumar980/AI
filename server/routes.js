@@ -1549,8 +1549,8 @@ router.get('/govt-poll', (req, res) => {
     const voteRow = db.prepare("SELECT choice, voted_at FROM govt_poll_votes WHERE poll_id = 'bjp_2029' AND ip = ?").get(ip);
 
     const totalVotes = (poll.yes_votes || 0) + (poll.no_votes || 0);
-    const yesPercent = totalVotes > 0 ? Math.round(((poll.yes_votes || 0) / totalVotes) * 100) : 50;
-    const noPercent = totalVotes > 0 ? 100 - yesPercent : 50;
+    const yesPercent = totalVotes > 0 ? Math.round(((poll.yes_votes || 0) / totalVotes) * 100) : 0;
+    const noPercent = totalVotes > 0 ? 100 - yesPercent : 0;
 
     res.json({
       pollId: poll.id,
