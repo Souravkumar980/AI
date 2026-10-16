@@ -151,7 +151,7 @@ export default function DonateModal({ isOpen, onClose }) {
 
           {/* Quick Contribution Note */}
           <div className="text-center text-[10px] font-bold text-gray-500 uppercase tracking-wider">
-            Every 1₹ Contribution Helps Keep Servers Online 🇮🇳
+            Every 10₹ Contribution Helps Keep Servers Online 🇮🇳
           </div>
 
         </div>

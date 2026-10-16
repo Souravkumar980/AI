@@ -275,17 +275,6 @@ export default function Header({
             <PlusCircle className="w-4 h-4" />
             <span>Submit a Propagandu Profile</span>
           </button>
-
-          <button
-            onClick={() => {
-              setMobileMenuOpen(false);
-              if (onOpenDonate) onOpenDonate();
-            }}
-            className="w-full text-left p-3 bg-popYellow text-black border-2 border-black rounded-xl text-xs uppercase font-black flex items-center gap-2 shadow-[3px_3px_0px_#000]"
-          >
-            <Heart className="w-4 h-4 text-popRed fill-popRed" />
-            <span>Donate / Support Digital Bharat</span>
-          </button>
         </div>
       )}
     </header>

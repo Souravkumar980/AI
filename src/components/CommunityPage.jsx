@@ -43,7 +43,9 @@ import {
   Pause,
   ChevronLeft,
   ChevronRight,
-  Heart
+  Heart,
+  Clock,
+  CheckCheck
 } from 'lucide-react';
 import DonateModal from './DonateModal';
 
@@ -84,6 +86,21 @@ function formatTime(seconds) {
   return `${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`;
 }
 
+// Helper to resolve media URLs (handles relative /api/community/files/... for static hosting)
+export function resolveMediaUrl(url) {
+  if (!url) return '';
+  if (url.startsWith('data:') || url.startsWith('blob:') || url.startsWith('http://') || url.startsWith('https://')) {
+    return url;
+  }
+  if (url.startsWith('/api')) {
+    const base = (typeof window !== 'undefined' && window.__API_BASE_URL__) || 'https://exposed-api.exposedpropagandu.workers.dev';
+    const key = (typeof window !== 'undefined' && window.__EP_CLIENT_KEY__) || 'ep-client-v1-bharat-first-2024';
+    const separator = url.includes('?') ? '&' : '?';
+    return `${base.replace(/\/+$/, '')}${url}${url.includes('key=') ? '' : `${separator}key=${key}`}`;
+  }
+  return url;
+}
+
 // Sample GIF library for Pop Art Chat
 const CURATED_GIFS = [
   { id: 'g1', title: 'Jai Hind Flag', url: 'https://media.giphy.com/media/3o7btUg31RCoBK2rMQ/giphy.gif' },
@@ -91,7 +108,9 @@ const CURATED_GIFS = [
   { id: 'g3', title: 'Salute Patriot', url: 'https://media.giphy.com/media/26hirEPeos6yugLDO/giphy.gif' },
   { id: 'g4', title: 'Victory Clap', url: 'https://media.giphy.com/media/111ebonMs90YLu/giphy.gif' },
   { id: 'g5', title: 'Exposed Truth', url: 'https://media.giphy.com/media/l0HlvtIPzPdt2usKs/giphy.gif' },
-  { id: 'g6', title: 'Fact Checked', url: 'https://media.giphy.com/media/3o7bu3XilJ5BOiSGic/giphy.gif' }
+  { id: 'g6', title: 'Fact Checked', url: 'https://media.giphy.com/media/3o7bu3XilJ5BOiSGic/giphy.gif' },
+  { id: 'g7', title: 'Namaste Bharat', url: 'https://media.giphy.com/media/3o7TKrEzt9MHDAi16U/giphy.gif' },
+  { id: 'g8', title: 'Patriotic Cheers', url: 'https://media.giphy.com/media/xT1R9SzWO4u7a2Y5BS/giphy.gif' }
 ];
 
 // Verified Badge using official assets from resources: /golden.png and /blue.png
@@ -722,11 +741,13 @@ export default function CommunityPage({ onSelectPage }) {
         }
         if (data.messages && Array.isArray(data.messages)) {
           setMessages(prev => {
-            // Check if messages count or any reactions/content actually changed
-            if (prev.length !== data.messages.length) return data.messages;
-            const prevHash = prev.map(m => `${m.id}_${JSON.stringify(m.reactions || {})}_${m.content}_${m.is_deleted}`).join('|');
-            const newHash = data.messages.map(m => `${m.id}_${JSON.stringify(m.reactions || {})}_${m.content}_${m.is_deleted}`).join('|');
-            if (prevHash !== newHash) return data.messages;
+            const uploadingMsgs = prev.filter(m => m.is_uploading);
+            const incomingIds = new Set(data.messages.map(m => m.id));
+            const merged = [...data.messages, ...uploadingMsgs.filter(m => !incomingIds.has(m.id))];
+            if (prev.length !== merged.length) return merged;
+            const prevHash = prev.map(m => `${m.id}_${JSON.stringify(m.reactions || {})}_${m.content}_${m.is_deleted}_${m.is_uploading}`).join('|');
+            const newHash = merged.map(m => `${m.id}_${JSON.stringify(m.reactions || {})}_${m.content}_${m.is_deleted}_${m.is_uploading}`).join('|');
+            if (prevHash !== newHash) return merged;
             return prev;
           });
         }
@@ -1305,8 +1326,12 @@ export default function CommunityPage({ onSelectPage }) {
       setNotifications(prev => [dmNotif, ...prev]);
     }
 
+    const filesToUpload = [...attachedFiles];
+    const hasUploadingFiles = filesToUpload.length > 0;
+    const tempMsgId = 'msg_' + Date.now() + Math.random().toString(36).substr(2, 4);
+
     const newMessage = {
-      id: 'msg_' + Date.now(),
+      id: tempMsgId,
       channel_id: activeChatRoom, // 'public', channel_id, or dm_target_id
       user_id: currentUser.id,
       user_name: currentUser.name,
@@ -1314,7 +1339,16 @@ export default function CommunityPage({ onSelectPage }) {
       user_avatar: currentUser.avatar_url,
       verified_type: currentUser.verified_type || 'none',
       content: inputText.trim(),
-      attachments: [...attachedFiles.map(f => ({ name: f.name, type: f.type, size: f.size, url: f.url }))],
+      attachments: filesToUpload.map(f => ({
+        id: f.id,
+        name: f.name,
+        type: f.type,
+        size: f.size,
+        url: f.previewUrl || f.url,
+        uploadData: f.uploadData,
+        mimeType: f.mimeType,
+        is_uploading: true
+      })),
       media_links: urlMatches,
       gif_url: null,
       reactions: {},
@@ -1323,9 +1357,11 @@ export default function CommunityPage({ onSelectPage }) {
         user_name: replyTarget.user_name || replyTarget.sender,
         content: (replyTarget.content || replyTarget.text || '').slice(0, 100)
       } : null,
-      created_at: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      created_at: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      is_uploading: hasUploadingFiles
     };
 
+    // Optimistically show message immediately in chat feed (WhatsApp feel)
     setMessages(prev => [...prev, newMessage]);
     broadcastCrossTab({ type: 'NEW_MESSAGE', message: newMessage });
     setInputText('');
@@ -1333,24 +1369,115 @@ export default function CommunityPage({ onSelectPage }) {
     setTagSuggestion(null);
     setReplyTarget(null);
 
+    // Save optimistically to localStorage so it stays live on site
     try {
-      const apiUrl = (typeof window !== 'undefined' && window.__API_BASE_URL__)
-        ? `${window.__API_BASE_URL__.replace(/\/+$/, '')}/api/community/messages`
-        : '/api/community/messages';
+      const existing = JSON.parse(localStorage.getItem('ep_community_messages') || '[]');
+      localStorage.setItem('ep_community_messages', JSON.stringify([...existing, newMessage]));
+    } catch (e) {}
 
-      const res = await fetch(apiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newMessage)
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.message) {
-          setMessages(prev => prev.map(m => m.id === newMessage.id ? data.message : m));
-          broadcastCrossTab({ type: 'NEW_MESSAGE', message: data.message });
+    // Background upload & database synchronization
+    (async () => {
+      try {
+        let updatedAttachments = [...newMessage.attachments];
+
+        if (filesToUpload.length > 0) {
+          const uploadedList = [];
+
+          for (const item of filesToUpload) {
+            let dataPayload = item.uploadData;
+            const mime = item.mimeType || 'application/octet-stream';
+
+            // If background compression wasn't ready, finish reading now
+            if (!dataPayload && item.rawFile) {
+              dataPayload = await new Promise((resolve) => {
+                const r = new FileReader();
+                r.onload = (ev) => resolve(ev.target.result);
+                r.onerror = () => resolve('');
+                r.readAsDataURL(item.rawFile);
+              });
+            }
+
+            if (dataPayload) {
+              try {
+                const apiUrl = (typeof window !== 'undefined' && window.__API_BASE_URL__)
+                  ? `${window.__API_BASE_URL__.replace(/\/+$/, '')}/api/community/upload`
+                  : '/api/community/upload';
+
+                const res = await fetch(apiUrl, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    filename: item.name,
+                    data: dataPayload,
+                    mimeType: mime
+                  })
+                });
+
+                if (res.ok) {
+                  const uploadRes = await res.json();
+                  uploadedList.push({
+                    name: item.name,
+                    type: item.type,
+                    size: uploadRes.size || item.size,
+                    url: uploadRes.url || dataPayload,
+                    is_uploading: false
+                  });
+                  continue;
+                }
+              } catch (uploadErr) {
+                console.warn('API upload error, using local data fallback:', uploadErr);
+              }
+            }
+
+            // Fallback: retain data / blob URL so the user never loses the media
+            uploadedList.push({
+              name: item.name,
+              type: item.type,
+              size: item.size,
+              url: dataPayload || item.previewUrl || item.url,
+              is_uploading: false
+            });
+          }
+
+          updatedAttachments = uploadedList;
         }
+
+        // Finalized message with upload buffer finished
+        const finalizedMessage = {
+          ...newMessage,
+          attachments: updatedAttachments,
+          is_uploading: false
+        };
+
+        const apiUrl = (typeof window !== 'undefined' && window.__API_BASE_URL__)
+          ? `${window.__API_BASE_URL__.replace(/\/+$/, '')}/api/community/messages`
+          : '/api/community/messages';
+
+        const res = await fetch(apiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(finalizedMessage)
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          const serverMsg = data.message ? { ...data.message, is_uploading: false } : finalizedMessage;
+          setMessages(prev => prev.map(m => m.id === tempMsgId ? serverMsg : m));
+          broadcastCrossTab({ type: 'MESSAGE_UPDATE', message: serverMsg });
+        } else {
+          setMessages(prev => prev.map(m => m.id === tempMsgId ? finalizedMessage : m));
+          broadcastCrossTab({ type: 'MESSAGE_UPDATE', message: finalizedMessage });
+        }
+      } catch (syncErr) {
+        console.error('Background upload/sync error:', syncErr);
+        // Clear uploading buffer even if network failed
+        setMessages(prev => prev.map(m => m.id === tempMsgId ? {
+          ...m,
+          is_uploading: false,
+          attachments: (m.attachments || []).map(a => ({ ...a, is_uploading: false }))
+        } : m));
       }
-    } catch {}
+    })();
   };
 
   const handleSendGif = async (gifUrl) => {
@@ -1397,6 +1524,11 @@ export default function CommunityPage({ onSelectPage }) {
     broadcastCrossTab({ type: 'NEW_MESSAGE', message: newMessage });
     setShowGifPicker(false);
     setReplyTarget(null);
+
+    try {
+      const existing = JSON.parse(localStorage.getItem('ep_community_messages') || '[]');
+      localStorage.setItem('ep_community_messages', JSON.stringify([...existing, newMessage]));
+    } catch (e) {}
 
     try {
       const apiUrl = (typeof window !== 'undefined' && window.__API_BASE_URL__)
@@ -1474,26 +1606,32 @@ export default function CommunityPage({ onSelectPage }) {
   };
 
   // -------------------------------------------------------------
-  // GIPHY API SEARCH & TRENDING LOADER
+  // GIPHY API SEARCH & TRENDING LOADER (DIRECT GIPHY PUBLIC API)
   // -------------------------------------------------------------
+  const GIPHY_PUBLIC_KEY = 'sXpGFDGZs0Dv1mmNFvYaGUvYwKX0PWIh';
+
   const fetchGiphyGifs = async (query = '') => {
     setGiphyLoading(true);
     try {
-      const endpoint = query.trim()
-        ? `/api/giphy/search?q=${encodeURIComponent(query.trim())}&limit=24`
-        : `/api/giphy/trending?limit=24`;
+      const trimmed = query.trim();
+      const endpoint = trimmed
+        ? `https://api.giphy.com/v1/gifs/search?api_key=${GIPHY_PUBLIC_KEY}&q=${encodeURIComponent(trimmed)}&limit=24&rating=g`
+        : `https://api.giphy.com/v1/gifs/trending?api_key=${GIPHY_PUBLIC_KEY}&limit=24&rating=g`;
+
       const res = await fetch(endpoint);
+      if (!res.ok) throw new Error('GIPHY API request failed');
       const data = await res.json();
       if (data && data.data && data.data.length > 0) {
         setGiphyResults(data.data.map(g => ({
           id: g.id,
-          title: g.title,
-          url: g.images?.fixed_height?.url || g.images?.downsized_medium?.url || g.images?.original?.url
+          title: g.title || 'GIF',
+          url: g.images?.fixed_height?.url || g.images?.downsized_medium?.url || g.images?.original?.url || g.images?.fixed_width?.url
         })));
       } else {
         setGiphyResults(CURATED_GIFS);
       }
     } catch (e) {
+      console.warn('Direct GIPHY fetch error, using curated fallback:', e);
       setGiphyResults(CURATED_GIFS);
     } finally {
       setGiphyLoading(false);
@@ -1507,7 +1645,7 @@ export default function CommunityPage({ onSelectPage }) {
   }, [showGifPicker]);
 
   // -------------------------------------------------------------
-  // FILE ATTACHMENT HANDLER (STRICTLY < 10MB) WITH UPLOAD ANIMATION
+  // FILE ATTACHMENT HANDLER (STRICTLY < 10MB) - WHATSAPP STYLE STAGING
   // -------------------------------------------------------------
   const handleFileUpload = (e) => {
     const files = Array.from(e.target.files);
@@ -1526,97 +1664,71 @@ export default function CommunityPage({ onSelectPage }) {
       else if (file.type.startsWith('text/')) type = 'text';
 
       const tempId = 'f_' + Date.now() + Math.random().toString(36).substr(2, 4);
+      const previewUrl = URL.createObjectURL(file);
 
-      // Add to draft with isUploading = true to trigger WhatsApp-style progress animation
-      setAttachedFiles(prev => [...prev, {
+      // Immediately stage in draft with instant thumbnail preview (WhatsApp feel)
+      const stagedItem = {
         id: tempId,
         name: file.name,
         type,
         size: (file.size / 1024).toFixed(0) + ' KB',
-        url: '',
-        isUploading: true
-      }]);
-
-      const processAndUpload = async () => {
-        try {
-          let uploadData = '';
-          let mime = file.type || 'application/octet-stream';
-
-          if (type === 'image') {
-            uploadData = await new Promise((resolve) => {
-              const r = new FileReader();
-              r.onload = (ev) => {
-                const img = new Image();
-                img.onload = () => {
-                  const maxDim = 1280;
-                  let w = img.width;
-                  let h = img.height;
-                  if (w > maxDim || h > maxDim) {
-                    if (w > h) {
-                      h = Math.round((h * maxDim) / w);
-                      w = maxDim;
-                    } else {
-                      w = Math.round((w * maxDim) / h);
-                      h = maxDim;
-                    }
-                  }
-                  const canvas = document.createElement('canvas');
-                  canvas.width = w;
-                  canvas.height = h;
-                  const ctx = canvas.getContext('2d');
-                  ctx.drawImage(img, 0, 0, w, h);
-                  resolve(canvas.toDataURL('image/jpeg', 0.82));
-                };
-                img.onerror = () => resolve(ev.target.result);
-                img.src = ev.target.result;
-              };
-              r.readAsDataURL(file);
-            });
-            mime = 'image/jpeg';
-          } else {
-            uploadData = await new Promise((resolve) => {
-              const r = new FileReader();
-              r.onload = (ev) => resolve(ev.target.result);
-              r.readAsDataURL(file);
-            });
-          }
-
-          const apiUrl = (typeof window !== 'undefined' && window.__API_BASE_URL__)
-            ? `${window.__API_BASE_URL__.replace(/\/+$/, '')}/api/community/upload`
-            : '/api/community/upload';
-
-          const res = await fetch(apiUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              filename: file.name,
-              data: uploadData,
-              mimeType: mime
-            })
-          });
-
-          if (res.ok) {
-            const data = await res.json();
-            setAttachedFiles(prev => prev.map(f => f.id === tempId ? {
-              ...f,
-              url: data.url,
-              size: data.size || f.size,
-              isUploading: false
-            } : f));
-          } else {
-            setAttachedFiles(prev => prev.map(f => f.id === tempId ? {
-              ...f,
-              url: uploadData,
-              isUploading: false
-            } : f));
-          }
-        } catch (err) {
-          console.error('File upload failed:', err);
-          setAttachedFiles(prev => prev.filter(f => f.id !== tempId));
-        }
+        previewUrl,
+        url: previewUrl,
+        rawFile: file,
+        uploadData: '',
+        mimeType: file.type || 'application/octet-stream',
+        isUploading: false
       };
 
-      processAndUpload();
+      setAttachedFiles(prev => [...prev, stagedItem]);
+
+      // Read & compress in background so uploadData is instantly ready when Send is pressed
+      const r = new FileReader();
+      r.onload = (ev) => {
+        if (type === 'image') {
+          const img = new Image();
+          img.onload = () => {
+            const maxDim = 1280;
+            let w = img.width;
+            let h = img.height;
+            if (w > maxDim || h > maxDim) {
+              if (w > h) {
+                h = Math.round((h * maxDim) / w);
+                w = maxDim;
+              } else {
+                w = Math.round((w * maxDim) / h);
+                h = maxDim;
+              }
+            }
+            const canvas = document.createElement('canvas');
+            canvas.width = w;
+            canvas.height = h;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, w, h);
+            const compressed = canvas.toDataURL('image/jpeg', 0.85);
+            setAttachedFiles(prev => prev.map(f => f.id === tempId ? {
+              ...f,
+              uploadData: compressed,
+              mimeType: 'image/jpeg'
+            } : f));
+          };
+          img.onerror = () => {
+            setAttachedFiles(prev => prev.map(f => f.id === tempId ? {
+              ...f,
+              uploadData: ev.target.result,
+              mimeType: file.type || 'image/jpeg'
+            } : f));
+          };
+          img.src = ev.target.result;
+        } else {
+          setAttachedFiles(prev => prev.map(f => f.id === tempId ? {
+            ...f,
+            uploadData: ev.target.result,
+            mimeType: file.type || 'application/octet-stream'
+          } : f));
+        }
+      };
+      r.readAsDataURL(file);
     }
     e.target.value = '';
   };
@@ -2676,7 +2788,7 @@ export default function CommunityPage({ onSelectPage }) {
                             </div>
                           )}
 
-                          {/* File Attachments with In-App Media Lightbox Opener */}
+                          {/* File Attachments with In-App Media Lightbox Opener & WhatsApp Buffering */}
                           {msg.attachments && msg.attachments.length > 0 && (
                             <div className="space-y-1.5 pt-1.5">
                               {msg.attachments.map((file, fIdx) => (
@@ -2686,48 +2798,78 @@ export default function CommunityPage({ onSelectPage }) {
                                 >
                                   {file.type === 'image' ? (
                                     <div
-                                      onClick={() => setActiveMediaViewer({ type: 'image', url: file.url, name: file.name, size: file.size })}
+                                      onClick={() => !file.is_uploading && setActiveMediaViewer({ type: 'image', url: resolveMediaUrl(file.url), name: file.name, size: file.size })}
                                       className="cursor-pointer relative overflow-hidden max-h-60 sm:max-h-72 md:max-h-80 lg:max-h-96 flex items-center justify-center bg-gray-50"
-                                      title="Tap to open high-res image"
+                                      title={file.is_uploading ? 'Uploading to database...' : 'Tap to open high-res image'}
                                     >
                                       <img
-                                        src={file.url}
+                                        src={resolveMediaUrl(file.url)}
                                         alt={file.name}
                                         className="max-h-60 sm:max-h-72 md:max-h-80 lg:max-h-96 w-auto max-w-full object-cover hover:scale-102 transition-transform"
                                       />
-                                      <div className="absolute inset-0 bg-black/0 hover:bg-black/25 flex items-center justify-center transition-colors">
-                                        <Eye className="w-6 h-6 text-white opacity-0 group-hover/attach:opacity-100 transition-opacity drop-shadow" />
-                                      </div>
+
+                                      {/* WhatsApp-Style Circular Buffering Animation Overlay */}
+                                      {file.is_uploading ? (
+                                        <div className="absolute inset-0 bg-black/45 backdrop-blur-[1px] flex flex-col items-center justify-center z-10 select-none">
+                                          <div className="relative w-14 h-14 bg-black/60 rounded-full border-2 border-white/20 flex items-center justify-center shadow-lg">
+                                            <div className="w-10 h-10 rounded-full border-3 border-white/20 border-t-white animate-spin" />
+                                            <div className="absolute inset-0 flex items-center justify-center">
+                                              <div className="w-2.5 h-2.5 rounded-full bg-white/90 animate-pulse" />
+                                            </div>
+                                          </div>
+                                          <span className="text-[10px] font-black text-white uppercase tracking-wider mt-2 bg-black/70 px-2.5 py-0.5 rounded-full shadow">
+                                            Uploading...
+                                          </span>
+                                        </div>
+                                      ) : (
+                                        <div className="absolute inset-0 bg-black/0 hover:bg-black/25 flex items-center justify-center transition-colors">
+                                          <Eye className="w-6 h-6 text-white opacity-0 group-hover/attach:opacity-100 transition-opacity drop-shadow" />
+                                        </div>
+                                      )}
                                     </div>
                                   ) : file.type === 'video' ? (
                                     <div
-                                      onClick={() => setActiveMediaViewer({ type: 'video', url: file.url, name: file.name, size: file.size })}
+                                      onClick={() => !file.is_uploading && setActiveMediaViewer({ type: 'video', url: resolveMediaUrl(file.url), name: file.name, size: file.size })}
                                       className="cursor-pointer relative bg-black max-h-56 sm:max-h-68 md:max-h-80 flex items-center justify-center"
-                                      title="Tap to open in-app video player"
+                                      title={file.is_uploading ? 'Uploading video...' : 'Tap to open in-app video player'}
                                     >
                                       <video className="max-h-56 sm:max-h-68 md:max-h-80 w-full object-cover opacity-80">
-                                        <source src={file.url} />
+                                        <source src={resolveMediaUrl(file.url)} />
                                       </video>
-                                      <div className="absolute inset-0 flex items-center justify-center bg-black/30 hover:bg-black/10 transition-colors">
-                                        <div className="w-12 h-12 rounded-full bg-white/95 border-2 border-black flex items-center justify-center shadow-lg">
-                                          <Play className="w-6 h-6 text-black fill-black ml-0.5" />
+                                      {file.is_uploading ? (
+                                        <div className="absolute inset-0 bg-black/50 backdrop-blur-[1px] flex flex-col items-center justify-center z-10">
+                                          <div className="w-12 h-12 rounded-full border-3 border-white/20 border-t-white animate-spin" />
+                                          <span className="text-[10px] font-bold text-white uppercase mt-2">Uploading...</span>
                                         </div>
-                                      </div>
+                                      ) : (
+                                        <div className="absolute inset-0 flex items-center justify-center bg-black/30 hover:bg-black/10 transition-colors">
+                                          <div className="w-12 h-12 rounded-full bg-white/95 border-2 border-black flex items-center justify-center shadow-lg">
+                                            <Play className="w-6 h-6 text-black fill-black ml-0.5" />
+                                          </div>
+                                        </div>
+                                      )}
                                     </div>
                                   ) : (
                                     <div
-                                      onClick={() => setActiveMediaViewer({ type: file.type === 'pdf' ? 'pdf' : 'file', url: file.url, name: file.name, size: file.size })}
+                                      onClick={() => !file.is_uploading && setActiveMediaViewer({ type: file.type === 'pdf' ? 'pdf' : 'file', url: resolveMediaUrl(file.url), name: file.name, size: file.size })}
                                       className="p-2.5 flex items-center justify-between gap-3 text-xs cursor-pointer hover:bg-amber-50/50"
-                                      title={file.type === 'pdf' ? 'Tap to view PDF in app' : 'Tap to open file'}
+                                      title={file.is_uploading ? 'Uploading file...' : (file.type === 'pdf' ? 'Tap to view PDF in app' : 'Tap to open file')}
                                     >
                                       <div className="flex items-center gap-2 truncate">
                                         <FileText className="w-4 h-4 text-saffron-dark shrink-0" />
                                         <span className="font-bold truncate">{file.name}</span>
                                         <span className="text-[10px] text-gray-500 font-mono">({file.size})</span>
                                       </div>
-                                      <span className="p-1 text-black font-bold text-[10px] bg-gray-100 rounded border border-black uppercase">
-                                        {file.type === 'pdf' ? 'View PDF' : 'Open'}
-                                      </span>
+                                      {file.is_uploading ? (
+                                        <span className="p-1 px-2 text-black font-bold text-[10px] bg-amber-100 rounded border border-black uppercase flex items-center gap-1 animate-pulse">
+                                          <div className="w-2.5 h-2.5 rounded-full border-2 border-black border-t-transparent animate-spin" />
+                                          <span>Uploading</span>
+                                        </span>
+                                      ) : (
+                                        <span className="p-1 text-black font-bold text-[10px] bg-gray-100 rounded border border-black uppercase">
+                                          {file.type === 'pdf' ? 'View PDF' : 'Open'}
+                                        </span>
+                                      )}
                                     </div>
                                   )}
                                 </div>
@@ -2738,7 +2880,7 @@ export default function CommunityPage({ onSelectPage }) {
                           {/* GIF Display */}
                           {msg.gif_url && (
                             <div className="rounded-xl border-2 border-black overflow-hidden shadow-sm mt-1.5">
-                              <img src={msg.gif_url} alt="GIF" className="max-h-52 w-auto object-cover" />
+                              <img src={resolveMediaUrl(msg.gif_url)} alt="GIF" className="max-h-52 w-auto object-cover" />
                             </div>
                           )}
 
@@ -2755,9 +2897,14 @@ export default function CommunityPage({ onSelectPage }) {
                             );
                           })()}
 
-                          {/* Bottom Clean Timestamp (Double tick removed) */}
+                          {/* Bottom Clean Timestamp & Delivery Status (WhatsApp Style) */}
                           <div className="flex items-center justify-end gap-1 mt-1 text-[9px] font-mono text-gray-500 select-none">
                             <span>{msg.created_at}</span>
+                            {msg.is_uploading ? (
+                              <Clock className="w-2.5 h-2.5 text-gray-400 animate-pulse" title="Uploading & sending..." />
+                            ) : (
+                              <CheckCheck className="w-3 h-3 text-saffron" title="Sent & Synchronized" />
+                            )}
                           </div>
 
                           {/* WhatsApp-Style Reaction Pills Docked at Bottom of Bubble */}
@@ -2925,32 +3072,66 @@ export default function CommunityPage({ onSelectPage }) {
             </div>
           )}
 
-          {/* Attached Files Preview Bar with WhatsApp-Style Uploading Spinner */}
+          {/* WhatsApp-Style Staged Media/File Dock */}
           {attachedFiles.length > 0 && (
-            <div className="bg-amber-50 border-t-2 border-black p-2 flex items-center gap-2 overflow-x-auto no-scrollbar shrink-0">
+            <div className="bg-amber-50/80 border-t-2 border-black p-2.5 flex items-center gap-2.5 overflow-x-auto no-scrollbar shrink-0">
               {attachedFiles.map((f, idx) => (
-                <div key={idx} className="relative bg-white border-2 border-black rounded-xl p-1.5 flex items-center gap-2 text-xs font-bold shadow-sm">
-                  {f.isUploading ? (
-                    <div className="w-5 h-5 rounded-full border-2 border-saffron border-t-transparent animate-spin shrink-0" />
+                <div
+                  key={idx}
+                  className="relative group rounded-xl overflow-hidden border-2 border-black bg-white shadow-[2px_2px_0px_#000] shrink-0"
+                >
+                  {f.type === 'image' ? (
+                    <div className="relative w-20 h-20 bg-gray-100 flex items-center justify-center">
+                      <img
+                        src={f.previewUrl || f.url}
+                        alt={f.name}
+                        className="w-full h-full object-cover"
+                      />
+                      <span className="absolute bottom-0 inset-x-0 bg-black/60 text-white text-[8px] font-mono px-1 py-0.5 truncate text-center">
+                        {f.size}
+                      </span>
+                    </div>
+                  ) : f.type === 'video' ? (
+                    <div className="relative w-24 h-20 bg-black flex flex-col items-center justify-center p-1 text-white">
+                      <Video className="w-6 h-6 text-saffron mb-1" />
+                      <span className="text-[9px] font-bold truncate max-w-full">{f.name}</span>
+                      <span className="text-[8px] font-mono text-gray-300">{f.size}</span>
+                    </div>
                   ) : (
-                    <CheckCircle className="w-4 h-4 text-tirangaGreen shrink-0" />
+                    <div className="w-28 h-20 bg-white p-2 flex flex-col items-center justify-center text-center">
+                      <FileText className="w-6 h-6 text-saffron mb-1" />
+                      <span className="text-[10px] font-black truncate max-w-full text-black">{f.name}</span>
+                      <span className="text-[8px] font-mono text-gray-500">{f.size}</span>
+                    </div>
                   )}
-                  <div className="flex flex-col truncate max-w-[140px]">
-                    <span className="truncate text-[11px] font-black">{f.name}</span>
-                    <span className="text-[9px] text-gray-500 font-mono">
-                      {f.isUploading ? 'Uploading...' : f.size}
-                    </span>
-                  </div>
+
+                  {/* Remove Attachment Button (Top-Right X) */}
                   <button
                     type="button"
                     onClick={() => setAttachedFiles(attachedFiles.filter((_, i) => i !== idx))}
-                    className="p-0.5 text-gray-500 hover:text-red-600 rounded-full font-black text-sm"
-                    title="Remove File"
+                    className="absolute top-1 right-1 w-5 h-5 bg-black/80 hover:bg-red-600 text-white rounded-full flex items-center justify-center text-xs font-black shadow transition-colors"
+                    title="Remove attachment"
                   >
-                    ×
+                    ✕
                   </button>
                 </div>
               ))}
+
+              {/* Add more files shortcut button */}
+              <label
+                className="w-16 h-20 border-2 border-dashed border-black/40 hover:border-black rounded-xl flex flex-col items-center justify-center cursor-pointer bg-white/70 hover:bg-white text-gray-700 hover:text-black transition-all shrink-0 active:scale-95"
+                title="Add another file or photo"
+              >
+                <Plus className="w-5 h-5" />
+                <span className="text-[9px] font-black uppercase mt-1">Add</span>
+                <input
+                  type="file"
+                  multiple
+                  accept="image/*,video/*,application/pdf,text/*"
+                  onChange={handleFileUpload}
+                  className="hidden"
+                />
+              </label>
             </div>
           )}
 
@@ -3089,7 +3270,7 @@ export default function CommunityPage({ onSelectPage }) {
                 <div className="flex-1 min-w-0 relative">
                   <input
                     type="text"
-                    placeholder="Type message... (Use @username to tag someone)"
+                    placeholder={attachedFiles.length > 0 ? "Add a caption..." : "Type message... (Use @username to tag someone)"}
                     value={inputText}
                     onChange={handleInputChange}
                     className="w-full px-3 sm:px-4 py-2 sm:py-2.5 bg-gray-50 border-2 border-black rounded-xl text-xs sm:text-sm font-bold text-black focus:bg-white focus:outline-none focus:ring-2 focus:ring-saffron"
