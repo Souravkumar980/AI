@@ -469,6 +469,7 @@ export default function CommunityPage({ onSelectPage }) {
   const [giphyQuery, setGiphyQuery] = useState('');
   const [giphyResults, setGiphyResults] = useState([]);
   const [giphyLoading, setGiphyLoading] = useState(false);
+  const giphyDebounceRef = useRef(null);
 
   // WhatsApp-Style Reply Target Bar
   const [replyTarget, setReplyTarget] = useState(null); // { id, user_name, content }
@@ -1566,36 +1567,54 @@ export default function CommunityPage({ onSelectPage }) {
   };
 
   // -------------------------------------------------------------
-  // GIPHY API SEARCH & TRENDING LOADER (DIRECT GIPHY PUBLIC API)
+  // GIPHY API SEARCH & TRENDING LOADER (DIRECT GIPHY PUBLIC API WITH PROXY FALLBACK)
   // -------------------------------------------------------------
   const GIPHY_PUBLIC_KEY = 'sXpGFDGZs0Dv1mmNFvYaGUvYwKX0PWIh';
 
   const fetchGiphyGifs = async (query = '') => {
     setGiphyLoading(true);
+    const trimmed = query.trim();
     try {
-      const trimmed = query.trim();
       const endpoint = trimmed
         ? `https://api.giphy.com/v1/gifs/search?api_key=${GIPHY_PUBLIC_KEY}&q=${encodeURIComponent(trimmed)}&limit=24&rating=g`
         : `https://api.giphy.com/v1/gifs/trending?api_key=${GIPHY_PUBLIC_KEY}&limit=24&rating=g`;
 
-      const res = await fetch(endpoint);
-      if (!res.ok) throw new Error('GIPHY API request failed');
-      const data = await res.json();
-      if (data && data.data && data.data.length > 0) {
-        setGiphyResults(data.data.map(g => ({
-          id: g.id,
-          title: g.title || 'GIF',
-          url: g.images?.fixed_height?.url || g.images?.downsized_medium?.url || g.images?.original?.url || g.images?.fixed_width?.url
-        })));
-      } else {
-        setGiphyResults(CURATED_GIFS);
+      let res = await fetch(endpoint).catch(() => null);
+      if (!res || !res.ok) {
+        // Fallback to internal API proxy
+        const fallbackEp = trimmed
+          ? `/api/giphy/search?q=${encodeURIComponent(trimmed)}&limit=24`
+          : `/api/giphy/trending?limit=24`;
+        res = await fetch(fallbackEp).catch(() => null);
       }
+
+      if (res && res.ok) {
+        const data = await res.json();
+        if (data && data.data && data.data.length > 0) {
+          setGiphyResults(data.data.map(g => ({
+            id: g.id,
+            title: g.title || 'GIF',
+            url: g.images?.fixed_height?.url || g.images?.downsized_medium?.url || g.images?.original?.url || g.images?.fixed_width?.url
+          })));
+          return;
+        }
+      }
+      // If no results or error, fallback to curated
+      setGiphyResults(CURATED_GIFS);
     } catch (e) {
-      console.warn('Direct GIPHY fetch error, using curated fallback:', e);
+      console.warn('GIPHY fetch error, using curated fallback:', e);
       setGiphyResults(CURATED_GIFS);
     } finally {
       setGiphyLoading(false);
     }
+  };
+
+  const handleGiphyQueryChange = (q) => {
+    setGiphyQuery(q);
+    if (giphyDebounceRef.current) clearTimeout(giphyDebounceRef.current);
+    giphyDebounceRef.current = setTimeout(() => {
+      fetchGiphyGifs(q);
+    }, 280);
   };
 
   useEffect(() => {
@@ -2856,13 +2875,11 @@ export default function CommunityPage({ onSelectPage }) {
                             );
                           })()}
 
-                          {/* Bottom Clean Timestamp & Delivery Status (WhatsApp Style) */}
+                          {/* Bottom Clean Timestamp (Double tick icon removed) */}
                           <div className="flex items-center justify-end gap-1 mt-1 text-[9px] font-mono text-gray-500 select-none">
                             <span>{msg.created_at}</span>
-                            {msg.is_uploading ? (
+                            {msg.is_uploading && (
                               <Clock className="w-2.5 h-2.5 text-gray-400 animate-pulse" title="Uploading & sending..." />
-                            ) : (
-                              <CheckCheck className="w-3 h-3 text-saffron" title="Sent & Synchronized" />
                             )}
                           </div>
 
@@ -3112,11 +3129,7 @@ export default function CommunityPage({ onSelectPage }) {
                   type="text"
                   placeholder="Search GIPHY (e.g. salute, namaste, modi, proud, cheer, victory)..."
                   value={giphyQuery}
-                  onChange={(e) => {
-                    const q = e.target.value;
-                    setGiphyQuery(q);
-                    fetchGiphyGifs(q);
-                  }}
+                  onChange={(e) => handleGiphyQueryChange(e.target.value)}
                   className="w-full pl-9 pr-8 py-2 bg-gray-50 border-2 border-black rounded-xl text-xs font-bold text-black focus:bg-white focus:outline-none shadow-sm"
                 />
                 {giphyQuery && (
@@ -3715,52 +3728,113 @@ export default function CommunityPage({ onSelectPage }) {
           <div className="bg-white border-3 border-black rounded-3xl max-w-md w-full p-6 sm:p-8 shadow-[8px_8px_0px_#000] space-y-4">
             
             <div className="flex items-center justify-between border-b-2 border-black pb-3">
-              <h3 className="font-comic text-xl text-black">SEARCH PATRIOT FRIENDS</h3>
+              <div>
+                <h3 className="font-comic text-xl text-black">SEARCH PATRIOT FRIENDS</h3>
+                <p className="text-[11px] font-bold text-gray-500">Search any registered user by User ID, username, or name</p>
+              </div>
               <button onClick={() => setIsUserSearchModalOpen(false)} className="p-1 hover:bg-gray-100 rounded-lg">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
+            {/* Current User's Own ID Card (Easy to share with friends) */}
+            {currentUser && (
+              <div className="p-3 bg-amber-50 border-2 border-black rounded-xl flex items-center justify-between gap-2 shadow-xs">
+                <div className="truncate">
+                  <div className="text-[10px] font-black uppercase tracking-wider text-saffron-dark">Your User ID (Share with friends)</div>
+                  <div className="font-mono text-xs font-black text-black truncate select-all">{currentUser.id}</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard?.writeText(currentUser.id);
+                    setToastMessage('Your User ID copied to clipboard!');
+                    setShowToast(true);
+                  }}
+                  className="px-2.5 py-1 bg-white hover:bg-black hover:text-white text-black border border-black rounded-lg text-[10px] font-black uppercase shrink-0 shadow-xs transition-colors"
+                >
+                  Copy ID
+                </button>
+              </div>
+            )}
+
             <div className="relative">
               <Search className="w-4 h-4 text-gray-500 absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
-                placeholder="Search by username or name..."
+                placeholder="Search by User ID (e.g. usr_...), username, or name..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-9 pr-4 py-2.5 bg-gray-50 border-2 border-black rounded-xl text-xs font-bold text-black focus:bg-white focus:outline-none"
+                autoFocus
               />
             </div>
 
-            <div className="space-y-2 max-h-60 overflow-y-auto no-scrollbar">
-              {users
-                .filter(u => u.id !== currentUser?.id && (u.name.toLowerCase().includes(searchQuery.toLowerCase()) || u.username.toLowerCase().includes(searchQuery.toLowerCase())))
-                .map(u => (
+            <div className="space-y-2 max-h-64 overflow-y-auto no-scrollbar">
+              {(() => {
+                const q = searchQuery.toLowerCase().trim();
+                const filtered = users.filter(u => {
+                  if (u.id === currentUser?.id) return false;
+                  if (!q) return true;
+                  const matchId = (u.id || '').toLowerCase().includes(q);
+                  const matchUser = (u.username || '').toLowerCase().includes(q);
+                  const matchName = (u.name || '').toLowerCase().includes(q);
+                  return matchId || matchUser || matchName;
+                });
+
+                if (filtered.length === 0) {
+                  return (
+                    <div className="p-4 text-center text-xs text-gray-500 font-bold bg-gray-50 rounded-xl border border-dashed border-gray-300">
+                      {q ? `No member found matching "${searchQuery}". Ask your friend for their exact User ID!` : 'No other users found.'}
+                    </div>
+                  );
+                }
+
+                return filtered.map(u => (
                   <div
                     key={u.id}
-                    className="p-2.5 bg-gray-50 hover:bg-amber-50 border-2 border-black rounded-xl flex items-center justify-between text-xs"
+                    className="p-3 bg-gray-50 hover:bg-amber-50 border-2 border-black rounded-xl flex items-center justify-between gap-2 text-xs"
                   >
-                    <div className="flex items-center gap-2.5">
-                      <img src={u.avatar_url} alt="" className="w-8 h-8 rounded-full border border-black object-cover" />
-                      <div>
-                        <div className="font-black text-black flex items-center gap-1">
-                          <span>{u.name}</span>
-                          {u.verified_type === 'influencer' && <span>🌟</span>}
-                          {u.verified_type === 'citizen' && <span>🔹</span>}
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <img src={u.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${u.username}`} alt="" className="w-9 h-9 rounded-full border border-black object-cover shrink-0" />
+                      <div className="min-w-0">
+                        <div className="font-black text-black flex items-center gap-1 truncate">
+                          <span className="truncate">{u.name}</span>
+                          <VerifiedBadge type={u.verified_type} size="sm" />
                         </div>
-                        <div className="text-[10px] font-mono text-gray-600">@{u.username}</div>
+                        <div className="text-[10px] font-mono text-gray-600 truncate">@{u.username}</div>
+                        <div className="text-[9px] font-mono font-bold text-gray-500 flex items-center gap-1 mt-0.5">
+                          <span className="bg-gray-200 px-1 py-0.2 rounded text-[9px] text-gray-700 select-all truncate max-w-[130px]">ID: {u.id}</span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigator.clipboard?.writeText(u.id);
+                              setToastMessage(`Copied User ID: ${u.id}`);
+                              setShowToast(true);
+                            }}
+                            className="text-[9px] text-blue-600 hover:underline shrink-0"
+                            title="Copy User ID"
+                          >
+                            Copy
+                          </button>
+                        </div>
                       </div>
                     </div>
 
                     <button
-                      onClick={() => handleStartDm(u)}
-                      className="px-3 py-1 bg-saffron hover:bg-saffron-dark text-black border border-black rounded-lg font-bold text-xs shadow-sm flex items-center gap-1"
+                      onClick={() => {
+                        handleStartDm(u);
+                        setIsUserSearchModalOpen(false);
+                      }}
+                      className="px-3 py-1.5 bg-saffron hover:bg-saffron-dark text-black border border-black rounded-lg font-black text-xs shadow-sm flex items-center gap-1 shrink-0"
                     >
                       <MessageSquare className="w-3 h-3" />
                       <span>Chat</span>
                     </button>
                   </div>
-                ))}
+                ));
+              })()}
             </div>
 
           </div>

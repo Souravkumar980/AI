@@ -111,7 +111,27 @@ async function generateUploadHtml() {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=5">
   <title>Exposed Propagandus | Bharat Mata ki Jai 🇮🇳</title>
-  <meta name="description" content="Public database tracking leftist propagandist influencers, political workers, and entities spreading anti-India and anti-Hindu narratives across YouTube, X, and Instagram.">
+  <meta name="description" content="Public database tracking anti-India propagandist influencers, political workers, and entities while celebrating patriotic nationalist creators. Bharat Mata ki Jai!">
+  
+  <!-- Open Graph / WhatsApp Meta Tags -->
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://exposedpropagandus.is-best.net/">
+  <meta property="og:title" content="Exposed Propagandus | Bharat Mata ki Jai 🇮🇳">
+  <meta property="og:description" content="Public watchdog tracking anti-India propagandists, foreign-funded narratives, and celebrating patriotic nationalist creators.">
+  <meta property="og:image" content="https://cdn.jsdelivr.net/gh/Souravkumar980/dist@main/flag-of-india.png">
+  <meta property="og:image:secure_url" content="https://cdn.jsdelivr.net/gh/Souravkumar980/dist@main/flag-of-india.png">
+  <meta property="og:image:type" content="image/png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:site_name" content="Exposed Propagandus">
+
+  <!-- Twitter Card Meta Tags -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:url" content="https://exposedpropagandus.is-best.net/">
+  <meta name="twitter:title" content="Exposed Propagandus | Bharat Mata ki Jai 🇮🇳">
+  <meta name="twitter:description" content="Public watchdog tracking anti-India propagandists, foreign-funded narratives, and celebrating patriotic nationalist creators.">
+  <meta name="twitter:image" content="https://cdn.jsdelivr.net/gh/Souravkumar980/dist@main/flag-of-india.png">
+
   <link rel="icon" type="image/png" href="${faviconUrl}">
   <link rel="apple-touch-icon" href="${faviconUrl}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -159,7 +179,14 @@ async function generateUploadHtml() {
         window.fetch = function(input, init) {
           init = init || {};
           var rawUrl = typeof input === 'string' ? input : (input instanceof Request ? input.url : '');
-          var isApiCall = rawUrl && (rawUrl.indexOf('/api') !== -1 || rawUrl.indexOf('api.php') !== -1);
+          var isThirdParty = rawUrl && (
+            rawUrl.indexOf('giphy.com') !== -1 ||
+            rawUrl.indexOf('youtube.com') !== -1 ||
+            rawUrl.indexOf('country.is') !== -1 ||
+            rawUrl.indexOf('dicebear.com') !== -1 ||
+            rawUrl.indexOf('ui-avatars.com') !== -1
+          );
+          var isApiCall = !isThirdParty && rawUrl && (rawUrl.indexOf('/api') !== -1 || rawUrl.indexOf('api.php') !== -1);
           var finalInput = input;
           if (isApiCall) {
             try {
@@ -191,22 +218,23 @@ async function generateUploadHtml() {
               }
               finalInput = parsed.toString();
             } catch(e) {}
+
+            var headers = new Headers(init.headers || (input instanceof Request ? input.headers : {}));
+            if (!headers.has('x-app-key')) {
+              headers.set('x-app-key', 'ep-client-v1-bharat-first-2024');
+            }
+            var adminKey = '';
+            try {
+              adminKey = localStorage.getItem('propagandus_admin_key') || localStorage.getItem('admin_token') || '';
+            } catch(e){}
+            if (adminKey && !headers.has('x-admin-key')) {
+              headers.set('x-admin-key', adminKey);
+            }
+            if (adminKey && !headers.has('authorization')) {
+              headers.set('authorization', 'Bearer ' + adminKey);
+            }
+            init.headers = headers;
           }
-          var headers = new Headers(init.headers || (input instanceof Request ? input.headers : {}));
-          if (!headers.has('x-app-key')) {
-            headers.set('x-app-key', 'ep-client-v1-bharat-first-2024');
-          }
-          var adminKey = '';
-          try {
-            adminKey = localStorage.getItem('propagandus_admin_key') || localStorage.getItem('admin_token') || '';
-          } catch(e){}
-          if (adminKey && !headers.has('x-admin-key')) {
-            headers.set('x-admin-key', adminKey);
-          }
-          if (adminKey && !headers.has('authorization')) {
-            headers.set('authorization', 'Bearer ' + adminKey);
-          }
-          init.headers = headers;
           return origFetch.call(this, finalInput, init);
         };
       }

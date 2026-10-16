@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 import './index.css';
+import { LanguageProvider } from './context/LanguageContext';
 
 // Dynamic Cloudflare / Remote API Base URL Interceptor & Sovereign Shield Protection
 export const EP_CLIENT_KEY = 'ep-client-v1-bharat-first-2024';
@@ -39,9 +40,16 @@ if (typeof window !== 'undefined') {
       let finalInput = input;
       const finalInit = init ? { ...init } : {};
 
-      // Determine if this is an API call
+      // Determine if this is an internal API call (strictly exclude third-party APIs like api.giphy.com)
       let rawUrl = typeof input === 'string' ? input : (input instanceof Request ? input.url : '');
-      const isApiCall = rawUrl && (rawUrl.includes('/api') || rawUrl.includes('api.php'));
+      const isThirdParty = rawUrl && (rawUrl.includes('giphy.com') || rawUrl.includes('youtube.com/oembed') || rawUrl.includes('dicebear.com') || rawUrl.includes('ui-avatars.com') || rawUrl.includes('country.is'));
+      const isApiCall = !isThirdParty && rawUrl && (
+        rawUrl.startsWith('/api') ||
+        rawUrl.startsWith('api/') ||
+        rawUrl.includes('/api/') ||
+        rawUrl.includes('api.php') ||
+        (cleanApiBase && rawUrl.startsWith(cleanApiBase))
+      );
 
       if (isApiCall) {
         let parsedUrl;
@@ -207,7 +215,9 @@ class ErrorBoundary extends React.Component {
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <ErrorBoundary>
-      <App />
+      <LanguageProvider>
+        <App />
+      </LanguageProvider>
     </ErrorBoundary>
   </React.StrictMode>
 );

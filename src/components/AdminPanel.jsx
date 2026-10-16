@@ -42,7 +42,9 @@ import {
   Smartphone,
   Monitor,
   Tablet,
-  Clock
+  Clock,
+  Lightbulb,
+  Mail
 } from 'lucide-react';
 
 // Helper to resolve any handle or input string to a direct clickable URL
@@ -136,6 +138,37 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
 
   // Toast message
   const [toastMessage, setToastMessage] = useState('');
+
+  // Feature Suggestions State
+  const [featureSuggestions, setFeatureSuggestions] = useState([]);
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+
+  const handleMarkSuggestionRead = async (id) => {
+    try {
+      const res = await fetch(`/api/admin/feature-suggestions/${id}/read`, {
+        method: 'POST',
+        headers: { 'x-admin-key': adminToken }
+      });
+      if (res.ok) {
+        setFeatureSuggestions(prev => prev.map(s => s.id === id ? { ...s, is_read: 1 } : s));
+        setToastMessage('Suggestion marked as read');
+      }
+    } catch (e) {}
+  };
+
+  const handleDeleteSuggestion = async (id) => {
+    if (!window.confirm('Are you sure you want to delete this feature suggestion?')) return;
+    try {
+      const res = await fetch(`/api/admin/feature-suggestions/${id}`, {
+        method: 'DELETE',
+        headers: { 'x-admin-key': adminToken }
+      });
+      if (res.ok) {
+        setFeatureSuggestions(prev => prev.filter(s => s.id !== id));
+        setToastMessage('Suggestion deleted');
+      }
+    } catch (e) {}
+  };
 
   // Admin Posts & Bulletins State
   const [adminPosts, setAdminPosts] = useState([]);
@@ -477,6 +510,17 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
         if (repRes.ok) {
           const repData = await repRes.json();
           setReports(Array.isArray(repData) ? repData : []);
+        }
+      } catch (e) {}
+
+      // Feature Suggestions
+      try {
+        const sugRes = await fetch('/api/admin/feature-suggestions', {
+          headers: { 'x-admin-key': adminToken }
+        });
+        if (sugRes.ok) {
+          const sugData = await sugRes.json();
+          setFeatureSuggestions(Array.isArray(sugData) ? sugData : []);
         }
       } catch (e) {}
 
@@ -1929,6 +1973,7 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
                 <option value="entities">🗂️ Manage Propagandus ({entities.length})</option>
                 <option value="shield">⚔️ Patriot Shield ({shieldData.attempts?.length || 0})</option>
                 <option value="reports">⚠️ User Reports Queue ({reports.filter(r => r.status === 'pending').length})</option>
+                <option value="suggestions">💡 Feature Suggestions ({featureSuggestions.filter(s => !s.is_read).length})</option>
                 <option value="security">🛡️ Anti-DDoS &amp; IP Bans ({securityData.blockedIps?.length || 0})</option>
                 <option value="backup">💾 Safe Backup &amp; Restore</option>
                 <option value="broadcast">📢 Screen Broadcast</option>
@@ -2032,6 +2077,20 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
                 {reports.filter(r => r.status === 'pending').length > 0 && (
                   <span className="ml-1 bg-rose-500 text-white px-1.5 py-0.2 rounded-full text-[10px] font-bold">
                     {reports.filter(r => r.status === 'pending').length}
+                  </span>
+                )}
+              </button>
+
+              <button
+                onClick={() => setActiveTab('suggestions')}
+                className={`px-3 py-1.5 rounded-xl transition-all flex items-center gap-1.5 relative ${
+                  activeTab === 'suggestions' ? 'bg-[#5a5eff] text-white shadow-sm font-semibold' : 'bg-transparent hover:bg-slate-100 text-slate-600 hover:text-slate-900 font-medium'
+                }`}
+              >
+                💡 Feature Suggestions
+                {featureSuggestions.filter(s => !s.is_read).length > 0 && (
+                  <span className="ml-1 bg-amber-500 text-black px-1.5 py-0.2 rounded-full text-[10px] font-black">
+                    {featureSuggestions.filter(s => !s.is_read).length}
                   </span>
                 )}
               </button>
@@ -3142,6 +3201,104 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
                                 Handled ({rep.status})
                               </span>
                             )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* TAB: CITIZEN FEATURE & UPDATE SUGGESTIONS */}
+              {activeTab === 'suggestions' && (
+                <div className="space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div>
+                      <h3 className="font-comic text-2xl text-black">CITIZEN FEATURE &amp; UPDATE SUGGESTIONS</h3>
+                      <p className="text-xs font-display text-gray-600">
+                        Direct feature requests and update ideas submitted by users from the homepage feedback vault.
+                      </p>
+                    </div>
+                    <button
+                      onClick={loadAllAdminData}
+                      className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs self-start sm:self-auto"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      <span>Refresh Suggestions</span>
+                    </button>
+                  </div>
+
+                  {featureSuggestions.length === 0 ? (
+                    <div className="text-center py-16 bg-white border border-slate-200 rounded-2xl p-6">
+                      <Lightbulb className="w-12 h-12 text-amber-500 mx-auto mb-2" />
+                      <p className="font-bold text-sm text-slate-800">No Feature Suggestions Yet</p>
+                      <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+                        When visitors suggest updates or features on the homepage, their messages will arrive here with direct reply options.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {featureSuggestions.map((sug) => (
+                        <div
+                          key={sug.id}
+                          className={`p-4 border-2 rounded-2xl bg-white shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4 transition-all ${
+                            sug.is_read ? 'border-slate-200 opacity-80' : 'border-amber-400 bg-amber-50/20'
+                          }`}
+                        >
+                          <div className="space-y-2 flex-1 min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black px-2 py-0.5 rounded-lg uppercase">
+                                {sug.category || 'Feature'}
+                              </span>
+                              <span className="font-display font-black text-sm text-slate-900">
+                                {sug.name}
+                              </span>
+                              <a
+                                href={`mailto:${sug.email}?subject=Exposed%20Propagandus%20-%20Update%20regarding%20your%20suggestion`}
+                                className="text-xs font-mono text-blue-600 hover:underline flex items-center gap-1"
+                                title="Reply via Email"
+                              >
+                                <span>{sug.email}</span>
+                                <ExternalLink className="w-2.5 h-2.5" />
+                              </a>
+                              <span className="text-[10px] font-mono text-slate-500">
+                                ({new Date(sug.created_at).toLocaleString()})
+                              </span>
+                            </div>
+
+                            <p className="text-xs font-display text-slate-800 bg-slate-50 p-3 border-l-3 border-[#5a5eff] rounded-xl whitespace-pre-wrap font-medium">
+                              "{sug.message}"
+                            </p>
+
+                            <div className="text-[10px] text-slate-500 font-mono">
+                              IP: {sug.ip_address || 'Unknown'} • Status: <strong className={sug.is_read ? 'text-slate-600' : 'text-amber-600 uppercase font-black'}>{sug.is_read ? 'Read' : 'NEW UNREAD'}</strong>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2 shrink-0 self-end md:self-center">
+                            {!sug.is_read && (
+                              <button
+                                onClick={() => handleMarkSuggestionRead(sug.id)}
+                                className="px-3 py-1.5 bg-tirangaGreen hover:bg-emerald-700 text-white text-xs font-bold border border-black rounded-xl shadow-xs flex items-center gap-1.5"
+                              >
+                                <CheckCircle className="w-3.5 h-3.5" />
+                                <span>Mark Read</span>
+                              </button>
+                            )}
+                            <a
+                              href={`mailto:${sug.email}?subject=Exposed%20Propagandus%20-%20Response%20to%20your%20suggestion&body=Namaste%20${encodeURIComponent(sug.name)},%0A%0AThank%20you%20for%20your%20valuable%20suggestion%20on%20Exposed%20Propagandus.%0A%0A`}
+                              className="px-3 py-1.5 bg-[#5a5eff] hover:bg-[#494cff] text-white text-xs font-bold border border-black rounded-xl shadow-xs flex items-center gap-1.5"
+                            >
+                              <Mail className="w-3.5 h-3.5" />
+                              <span>Reply</span>
+                            </a>
+                            <button
+                              onClick={() => handleDeleteSuggestion(sug.id)}
+                              className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 rounded-xl text-xs transition-colors"
+                              title="Delete Suggestion"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
                           </div>
                         </div>
                       ))}

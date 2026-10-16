@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import IndianFlagLogo from './IndianFlagLogo';
-import { TwitterIcon, YoutubeIcon, InstagramIcon } from './SocialIcons';
+import { TwitterIcon, YoutubeIcon, InstagramIcon, getSocialPlatformInfo } from './SocialIcons';
+import { useLanguage } from '../context/LanguageContext';
 import SpotlightSection from './SpotlightSection';
 import BulletinBanner from './BulletinBanner';
 import {
@@ -35,7 +36,23 @@ const DEFAULT_CATEGORIES = [
 ];
 
 export default function NationalistPage({ onOpenSuggest, onNavigatePropagandus, onOpenShareCard, reloadTrigger }) {
+  const { t } = useLanguage();
   const [influencers, setInfluencers] = useState([]);
+
+  const parseOtherLinks = (raw) => {
+    if (!raw) return [];
+    if (Array.isArray(raw)) return raw.filter(Boolean);
+    if (typeof raw === 'string') {
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed.filter(Boolean);
+        return [raw];
+      } catch (e) {
+        return raw.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
+      }
+    }
+    return [];
+  };
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
@@ -343,6 +360,16 @@ export default function NationalistPage({ onOpenSuggest, onNavigatePropagandus, 
               </button>
             ))}
           </div>
+        </div>
+
+        {/* Support Nationalist People Banner */}
+        <div className="bento-card p-3.5 sm:p-4 bg-gradient-to-r from-amber-50 via-orange-50 to-green-50 border-3 border-black shadow-[4px_4px_0px_#000] flex items-center gap-3.5">
+          <div className="w-10 h-10 bg-tirangaGreen border-2 border-black rounded-xl flex items-center justify-center shrink-0 shadow-[2px_2px_0px_#000]">
+            <Award className="w-5 h-5 text-white" />
+          </div>
+          <p className="font-display font-black text-xs sm:text-sm text-black leading-snug">
+            {t('nationalist_banner_msg', 'Support These Nationalist People Who always Stands for Bharat in Every Situations, Must Follow all these people on their Social Media')}
+          </p>
         </div>
 
         {/* ------------------------------------------------------------- */}
@@ -695,6 +722,26 @@ function CreatorCard({ item, rank, rankBadge, rankRingColor, isUpvoted, onUpvote
                 <ExternalLink className="w-2.5 h-2.5 opacity-80" />
               </a>
             )}
+
+            {parseOtherLinks(item.other_links).map((link, lIdx) => {
+              const info = getSocialPlatformInfo(link);
+              const Icon = info.icon;
+              const linkUrl = /^https?:\/\//i.test(link) ? link : `https://${link}`;
+              return (
+                <a
+                  key={lIdx}
+                  href={linkUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={`px-2.5 py-1 ${info.bgClass} rounded-lg text-[11px] font-mono font-bold flex items-center gap-1 border border-black shadow-[1px_1px_0px_#000]`}
+                  title={info.name}
+                >
+                  <Icon className="w-3.5 h-3.5 fill-current" />
+                  <span>{info.name}</span>
+                  <ExternalLink className="w-2.5 h-2.5 opacity-80" />
+                </a>
+              );
+            })}
           </div>
         </div>
 

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import IndianFlagLogo from './IndianFlagLogo';
 import { Database, PlusCircle, Menu, X, Award, Sparkles, Play, Pause, ListMusic, Users, Heart } from 'lucide-react';
 import { useMusicPlayer } from './MusicPlayer';
+import { useLanguage } from '../context/LanguageContext';
 
 export default function Header({
   activePage = 'propagandus',
@@ -13,6 +14,7 @@ export default function Header({
   onLogoClick
 }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const { lang, toggleLang, t } = useLanguage();
   const music = useMusicPlayer();
   const isPlaying = music?.isPlaying;
   const togglePlay = music?.togglePlay;
@@ -84,17 +86,30 @@ export default function Header({
           </div>
         </div>
 
-        {/* Donate Option Button in Top Right Corner */}
-        {onOpenDonate && (
+        {/* Right Action Controls: Language Switch & Donate */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          {/* Language Toggle Button (English / हिन्दी) */}
           <button
-            onClick={onOpenDonate}
-            className="px-2 sm:px-2.5 py-0.5 bg-popYellow hover:bg-yellow-400 text-black border border-black rounded-lg text-[10px] font-black uppercase shadow-[1px_1px_0px_#000] flex items-center gap-1 active:translate-y-0.5 transition-all shrink-0"
-            title="Support / Donate to Developer Team"
+            onClick={toggleLang}
+            className="px-2 sm:px-2.5 py-0.5 bg-white hover:bg-gray-100 text-black border border-black rounded-lg text-[10px] font-black uppercase shadow-[1px_1px_0px_#000] flex items-center gap-1 active:translate-y-0.5 transition-all shrink-0 cursor-pointer"
+            title="Switch Language / भाषा बदलें"
           >
-            <Heart className="w-3 h-3 text-popRed fill-popRed" />
-            <span>Donate</span>
+            <span>🇮🇳</span>
+            <span>{lang === 'en' ? 'हिन्दी' : 'English'}</span>
           </button>
-        )}
+
+          {/* Donate Option Button in Top Right Corner */}
+          {onOpenDonate && (
+            <button
+              onClick={onOpenDonate}
+              className="px-2 sm:px-2.5 py-0.5 bg-popYellow hover:bg-yellow-400 text-black border border-black rounded-lg text-[10px] font-black uppercase shadow-[1px_1px_0px_#000] flex items-center gap-1 active:translate-y-0.5 transition-all shrink-0 cursor-pointer"
+              title="Support / Donate to Developer Team"
+            >
+              <Heart className="w-3 h-3 text-popRed fill-popRed" />
+              <span>{t('donate', 'Donate')}</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Main Navigation Bar */}
@@ -134,7 +149,7 @@ export default function Header({
             }`}
           >
             <Database className="w-3.5 h-3.5 text-black" />
-            <span>Exposed Propagandus</span>
+            <span>{t('nav_home', 'Exposed Propagandus')}</span>
             {stats && (
               <span className="bg-black text-white text-[10px] px-1.5 py-0.5 rounded-full font-mono">
                 {stats.totalEntities || 0}
@@ -151,7 +166,7 @@ export default function Header({
             }`}
           >
             <Award className="w-3.5 h-3.5 text-white" />
-            <span>Nationalists</span>
+            <span>{t('nav_nationalists', 'Nationalists')}</span>
           </button>
 
           <button
@@ -163,42 +178,11 @@ export default function Header({
             }`}
           >
             <Users className="w-3.5 h-3.5 text-popYellow" />
-            <span>Community</span>
+            <span>{t('nav_community', 'Community')}</span>
             <span className="bg-popYellow text-black text-[9px] px-1.5 py-0.2 rounded-full font-bold">
               LIVE
             </span>
           </button>
-        </div>
-
-        {/* Action Buttons (Desktop) */}
-        <div className="hidden md:flex items-center gap-2 font-display">
-          {/* Donate / Support Button */}
-          <button
-            onClick={onOpenDonate}
-            className="bento-btn bg-popYellow hover:bg-yellow-400 text-black px-3 py-2 text-xs uppercase tracking-wider flex items-center gap-1.5 border-2 border-black shadow-[3px_3px_0px_#000] font-black"
-            title="Support / Donate to Developer Team"
-          >
-            <Heart className="w-4 h-4 text-popRed fill-popRed" />
-            <span>Donate</span>
-          </button>
-
-          {activePage === 'nationalists' ? (
-            <button
-              onClick={onOpenSuggest}
-              className="bento-btn bg-tirangaGreen hover:bg-green-700 text-white px-3.5 py-2 text-xs uppercase tracking-wider flex items-center gap-1.5 border-2 border-black shadow-[3px_3px_0px_#000]"
-            >
-              <Sparkles className="w-4 h-4 text-popYellow" />
-              <span>Suggest Creator</span>
-            </button>
-          ) : (
-            <button
-              onClick={onOpenSubmit}
-              className="bento-btn bg-saffron hover:bg-saffron-dark text-black px-3.5 py-2 text-xs uppercase tracking-wider flex items-center gap-1.5 border-2 border-black shadow-[3px_3px_0px_#000]"
-            >
-              <PlusCircle className="w-4 h-4 text-black" />
-              <span>Submit Propagandu</span>
-            </button>
-          )}
         </div>
 
         {/* Mobile menu trigger */}
