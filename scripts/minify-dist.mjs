@@ -153,6 +153,29 @@ async function generateUploadHtml() {
         };
         window.Audio.prototype = OrigAudio.prototype;
       }
+
+      var origFetch = window.fetch;
+      if (origFetch) {
+        window.fetch = function(input, init) {
+          init = init || {};
+          var headers = new Headers(init.headers || (input instanceof Request ? input.headers : {}));
+          if (!headers.has('x-app-key')) {
+            headers.set('x-app-key', 'ep-client-v1-bharat-first-2024');
+          }
+          var adminKey = '';
+          try {
+            adminKey = localStorage.getItem('propagandus_admin_key') || localStorage.getItem('admin_token') || '';
+          } catch(e){}
+          if (adminKey && !headers.has('x-admin-key')) {
+            headers.set('x-admin-key', adminKey);
+          }
+          if (adminKey && !headers.has('authorization')) {
+            headers.set('authorization', 'Bearer ' + adminKey);
+          }
+          init.headers = headers;
+          return origFetch.call(this, input, init);
+        };
+      }
     })();
   </script>
   <script type="module" crossorigin src="${jsUrl}"></script>

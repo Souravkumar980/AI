@@ -935,7 +935,7 @@ export default function CommunityPage({ onSelectPage }) {
     }
 
     // Check if email already registered locally
-    if (users.some(u => u.email.toLowerCase() === email)) {
+    if (users.some(u => u.email && u.email.toLowerCase() === email)) {
       setRegError('An account with this email address is already registered. Please log in.');
       return;
     }
@@ -2585,8 +2585,8 @@ export default function CommunityPage({ onSelectPage }) {
             {activeChannelObj && (
               <button
                 onClick={() => {
-                  const token = activeChannelObj?.join_token || activeChannelObj?.id;
-                  if (!token) {
+                  const token = activeChannelObj?.join_token || activeChannelObj?.joinToken || activeChannelObj?.id || (activeChatRoom !== 'public' ? activeChatRoom : '');
+                  if (!token || token === 'undefined' || token === 'public') {
                     alert('Channel invite link is generating. Please wait a moment.');
                     return;
                   }

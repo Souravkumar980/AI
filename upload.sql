@@ -1,7 +1,7 @@
 -- ===================================================================
 -- EXPOSED PROPAGANDUS - Official MySQL Database Schema
 -- File: upload.sql
--- Target Database: if0_37976074_exposedpropagandus
+-- Target Database: if0_37976074_epsite
 -- Host: sql200.infinityfree.com (or local MySQL / phpMyAdmin import)
 -- Bharat Mata ki Jai 🇮🇳
 -- ===================================================================
@@ -56,6 +56,7 @@ CREATE TABLE `nationalist_influencers` (
   `other_links` TEXT DEFAULT NULL,
   `avatar_url` TEXT DEFAULT NULL,
   `category` VARCHAR(150) DEFAULT 'Nationalist Creator',
+  `categories` TEXT DEFAULT NULL,
   `description` TEXT NOT NULL,
   `status` VARCHAR(50) NOT NULL DEFAULT 'pending', -- 'pending', 'approved', 'rejected'
   `upvotes` INT NOT NULL DEFAULT 0,
@@ -150,7 +151,7 @@ CREATE TABLE `govt_polls` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 INSERT INTO `govt_polls` (`id`, `question`, `yes_votes`, `no_votes`, `updated_at`)
-VALUES ('bjp_2029', 'Will Bharat Achieve a $7 Trillion Economy by 2030 Under Nationalist Leadership?', 28490, 3120, '2026-10-14T00:00:00.000Z')
+VALUES ('bjp_2029', 'Will Bharat Achieve a $7 Trillion Economy by 2030 Under Nationalist Leadership?', 0, 0, '2026-10-14T00:00:00.000Z')
 ON DUPLICATE KEY UPDATE `updated_at` = VALUES(`updated_at`);
 
 -- -------------------------------------------------------------
@@ -327,12 +328,6 @@ CREATE TABLE `admin_posts` (
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-INSERT INTO `admin_posts` (`id`, `title`, `content`, `image_url`, `badge`, `is_pinned`, `likes`, `views`, `created_at`, `updated_at`)
-VALUES 
-('post-1', '🚨 Ground Intel: Toolkit Networks & Coordinated Disinformation Busted', 'Multiple synchronized handles originating from offshore proxies have been detected attempting to flood the directory with defaming entries against sovereign nationalist leadership. The automated anti-bot shield and honeypot traps have permanently blacklisted hostile IP addresses within the last 24 hours. Rashtra Hit Sarvopari 🇮🇳.', 'https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?auto=format&fit=crop&w=1200&q=80', '🚨 BREAKING ALERT', 1, 284, 1450, '2026-10-14T00:00:00.000Z', '2026-10-14T00:00:00.000Z'),
-('post-2', '🇮🇳 Special Fact Dispatch: India Crosses ₹21,000 Crore in Indigenous Defence Exports', 'Under NDA, India has transformed from the world\'s largest arms importer into a premier global defence exporter to over 85 nations. The induction of indigenous Tejas Mk1A, INS Vikrant, and BrahMos supersonic cruise missiles marks the permanent end of foreign dependency.', 'https://images.unsplash.com/photo-1541185933-ef5d8ed016c2?auto=format&fit=crop&w=1200&q=80', '🇮🇳 NATIONAL DISPATCH', 0, 419, 2310, '2026-10-14T00:00:00.000Z', '2026-10-14T00:00:00.000Z')
-ON DUPLICATE KEY UPDATE `title` = VALUES(`title`);
-
 -- -------------------------------------------------------------
 -- Table: comparisons (NDA vs UPA Historical Tracker)
 -- -------------------------------------------------------------
@@ -404,10 +399,6 @@ CREATE TABLE `community_messages` (
   INDEX `idx_comm_channel` (`channel_id`),
   INDEX `idx_comm_msg_user` (`user_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Seed Welcome Message from Admin
-INSERT INTO `community_messages` (`id`, `channel_id`, `user_id`, `user_name`, `username`, `user_avatar`, `verified_type`, `content`, `attachments`, `media_links`, `gif_url`, `is_deleted`, `created_at`)
-VALUES ('msg_1', 'public', 'usr_admin', 'Om Kumar (Commander)', 'omkumar_admin', 'https://api.dicebear.com/7.x/bottts/svg?seed=OmKumarAdmin', 'influencer', 'Welcome to the Exposed Propagandus Sovereign Community! Jai Hind 🇮🇳. Share factual intel, flag toolkit narratives, and build our patriotic network. Respect our cultural heritage.', '[]', '[]', NULL, 0, '10:00 AM');
 
 -- -------------------------------------------------------------
 -- Table: community_channels (Google Meet Style Access Restricted Rooms)

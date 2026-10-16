@@ -226,18 +226,21 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
     const map = new Map();
     (liveTrafficData.visitors || []).forEach(v => {
       if (!v || !v.ip) return;
-      if (!map.has(v.ip)) {
-        map.set(v.ip, { ...v, visit_count: Number(v.visit_count) || 1 });
+      const cleanIp = String(v.ip).replace(/^::ffff:/i, '').split(':')[0].trim();
+      if (!cleanIp) return;
+      if (!map.has(cleanIp)) {
+        map.set(cleanIp, { ...v, ip: cleanIp, visit_count: Number(v.visit_count) || 1 });
       } else {
-        const prev = map.get(v.ip);
-        prev.visit_count = (prev.visit_count || 1) + (Number(v.visit_count) || 1);
-        if (new Date(v.last_seen) > new Date(prev.last_seen)) {
+        const prev = map.get(cleanIp);
+        prev.visit_count = Math.max(prev.visit_count || 1, Number(v.visit_count) || 1);
+        if (new Date(v.last_seen) >= new Date(prev.last_seen)) {
           prev.last_seen = v.last_seen;
           prev.current_page = v.current_page || prev.current_page;
           prev.is_online = prev.is_online || v.is_online;
           prev.device_type = v.device_type || prev.device_type;
           prev.browser = v.browser || prev.browser;
           prev.os = v.os || prev.os;
+          prev.is_blocked = prev.is_blocked || v.is_blocked;
         }
       }
     });
@@ -1051,33 +1054,60 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
       alert('Please enter a YouTube video URL first.');
       return;
     }
-    setFetchingYtInfo(true);
-    try {
-      const res = await fetch('/api/admin/youtube-info', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-admin-key': adminToken
-        },
-        body: JSON.stringify({ url: spotlightForm.videoUrl })
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        setSpotlightForm(prev => ({
-          ...prev,
-          title: prev.title || data.title || '',
-          channelName: data.channelName || prev.channelName || '',
-          channelUrl: data.channelUrl || prev.channelUrl || ''
-        }));
-        showToast('✅ Fetched YouTube details: ' + (data.channelName || 'Success'));
-      } else {
-        alert(data.error || 'Could not fetch details from YouTube. Please fill manually.');
-      }
-    } catch (err) {
-      alert('Failed to connect to YouTube service: ' + err.message);
-    } finally {
-      setFetchingYtInfo(false);
+    const cleanUrl = spotlightForm.videoUrl.trim();
+    const regExp = /(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([a-zA-Z0-9_-]{11})/;
+    const match = cleanUrl.match(regExp);
+    const videoId = match ? match[1] : null;
+
+    if (!videoId) {
+      alert('Invalid YouTube URL format. Please provide a valid YouTube video or shorts link.');
+      return;
     }
+
+    setFetchingYtInfo(true);
+    let title = '';
+    let channelName = '';
+    let channelUrl = '';
+
+    // 1. Try browser-direct oEmbed
+    try {
+      const oembedRes = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(cleanUrl)}&format=json`);
+      if (oembedRes.ok) {
+        const odata = await oembedRes.json();
+        title = odata.title || '';
+        channelName = odata.author_name || '';
+        channelUrl = odata.author_url || '';
+      }
+    } catch (_) {}
+
+    // 2. Try server API if needed
+    if (!title) {
+      try {
+        const res = await fetch('/api/admin/youtube-info', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-admin-key': adminToken
+          },
+          body: JSON.stringify({ url: cleanUrl })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.title) title = data.title;
+          if (data.channelName) channelName = data.channelName;
+          if (data.channelUrl) channelUrl = data.channelUrl;
+        }
+      } catch (_) {}
+    }
+
+    setSpotlightForm(prev => ({
+      ...prev,
+      title: title || prev.title || `Spotlight Video #${videoId}`,
+      channelName: channelName || prev.channelName || 'Featured Nationalist YouTuber',
+      channelUrl: channelUrl || prev.channelUrl || `https://www.youtube.com/watch?v=${videoId}`
+    }));
+    showToast('✅ YouTube video details loaded successfully!');
+    setFetchingYtInfo(false);
   };
 
   const handleSpotlightImageUpload = (e) => {

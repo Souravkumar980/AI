@@ -98,12 +98,13 @@ export default function SpotlightSection({ reloadTrigger }) {
       const res = await fetch(`${baseUrl}/api/spotlight`);
       if (res.ok) {
         const data = await res.json();
-        // If data has entity property instead of spotlight object, treat as off
         if (data && data.type) {
           setSpotlight(data);
         } else {
           setSpotlight({ type: 'off' });
         }
+      } else {
+        setSpotlight({ type: 'off' });
       }
     } catch (e) {
       console.error('Failed to fetch spotlight media', e);

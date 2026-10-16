@@ -6,7 +6,7 @@ import './index.css';
 // Dynamic Cloudflare / Remote API Base URL Interceptor & Sovereign Shield Protection
 export const EP_CLIENT_KEY = 'ep-client-v1-bharat-first-2024';
 export const EP_SHIELD_SALT = 'BharatSovereignShield2026!Protected@Edge';
-export const DEFAULT_API_BASE_URL = 'https://exposed-api.exposedpropagandu.workers.dev';
+export const DEFAULT_API_BASE_URL = '';
 
 // High-speed non-blocking synchronous cryptographic rolling hash
 export function generateShieldHash(str) {
@@ -21,10 +21,11 @@ export function generateShieldHash(str) {
   return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16);
 }
 
-const rawApiBase = (typeof window !== 'undefined' && window.__API_BASE_URL__) ||
-  import.meta.env?.VITE_API_BASE_URL ||
-  (typeof localStorage !== 'undefined' ? localStorage.getItem('ep_api_base_url') : '') ||
-  DEFAULT_API_BASE_URL;
+const rawApiBase = (typeof window !== 'undefined' && typeof window.__API_BASE_URL__ === 'string')
+  ? window.__API_BASE_URL__
+  : ((import.meta.env?.VITE_API_BASE_URL !== undefined && import.meta.env.VITE_API_BASE_URL !== '')
+    ? import.meta.env.VITE_API_BASE_URL
+    : (typeof localStorage !== 'undefined' ? localStorage.getItem('ep_api_base_url') : '') || DEFAULT_API_BASE_URL);
 
 const cleanApiBase = rawApiBase ? rawApiBase.replace(/\/+$/, '') : '';
 
@@ -67,6 +68,9 @@ if (typeof window !== 'undefined') {
 
         const timestamp = Date.now().toString();
         const fastSig = generateShieldHash(`${timestamp}:${pathname}:${EP_SHIELD_SALT}`);
+        const adminKey = (typeof localStorage !== 'undefined')
+          ? (localStorage.getItem('propagandus_admin_key') || localStorage.getItem('admin_token') || '')
+          : '';
 
         // Set security query parameters
         try {
@@ -74,10 +78,16 @@ if (typeof window !== 'undefined') {
           parsed.searchParams.set('key', EP_CLIENT_KEY);
           parsed.searchParams.set('ep_t', timestamp);
           parsed.searchParams.set('ep_sig', fastSig);
+          if (adminKey && pathname.includes('/api/admin')) {
+            parsed.searchParams.set('adminKey', adminKey);
+          }
           urlStr = parsed.toString();
         } catch (e) {
           const sep = urlStr.includes('?') ? '&' : '?';
           urlStr = `${urlStr}${sep}key=${encodeURIComponent(EP_CLIENT_KEY)}&ep_t=${timestamp}&ep_sig=${fastSig}`;
+          if (adminKey && urlStr.includes('/api/admin')) {
+            urlStr += `&adminKey=${encodeURIComponent(adminKey)}`;
+          }
         }
 
         if (typeof finalInput === 'string') {
@@ -91,6 +101,12 @@ if (typeof window !== 'undefined') {
         headers.set('X-Client-Key', EP_CLIENT_KEY);
         headers.set('X-EP-Timestamp', timestamp);
         headers.set('X-EP-Signature', fastSig);
+        if (adminKey) {
+          headers.set('X-Admin-Key', adminKey);
+          if (!headers.has('Authorization')) {
+            headers.set('Authorization', `Bearer ${adminKey}`);
+          }
+        }
         finalInit.headers = headers;
       }
 
