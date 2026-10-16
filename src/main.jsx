@@ -3,9 +3,23 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import './index.css';
 
-// Dynamic Cloudflare / Remote API Base URL Interceptor & App Key Protection
+// Dynamic Cloudflare / Remote API Base URL Interceptor & Sovereign Shield Protection
 export const EP_CLIENT_KEY = 'ep-client-v1-bharat-first-2024';
+export const EP_SHIELD_SALT = 'BharatSovereignShield2026!Protected@Edge';
 export const DEFAULT_API_BASE_URL = 'https://exposed-api.exposedpropagandu.workers.dev';
+
+// High-speed non-blocking synchronous cryptographic rolling hash
+export function generateShieldHash(str) {
+  let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+  for (let i = 0; i < str.length; i++) {
+    const ch = str.charCodeAt(i);
+    h1 = Math.imul(h1 ^ ch, 2654435761);
+    h2 = Math.imul(h2 ^ ch, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16);
+}
 
 const rawApiBase = (typeof window !== 'undefined' && window.__API_BASE_URL__) ||
   import.meta.env?.VITE_API_BASE_URL ||
@@ -45,25 +59,65 @@ if (typeof window !== 'undefined') {
       }
 
       if (urlStr && urlStr.includes('/api')) {
-        // Append client key query param (?key=...) to ensure seamless access without CORS preflight failures
-        if (!urlStr.includes('key=')) {
-          const separator = urlStr.includes('?') ? '&' : '?';
-          urlStr = `${urlStr}${separator}key=${encodeURIComponent(EP_CLIENT_KEY)}`;
-          if (typeof finalInput === 'string') {
-            finalInput = urlStr;
-          } else if (finalInput instanceof Request) {
-            finalInput = new Request(urlStr, finalInit);
-          }
+        let pathname = '/api';
+        try {
+          const parsed = new URL(urlStr, window.location.href);
+          pathname = parsed.pathname;
+        } catch (e) {}
+
+        const timestamp = Date.now().toString();
+        const fastSig = generateShieldHash(`${timestamp}:${pathname}:${EP_SHIELD_SALT}`);
+
+        // Set security query parameters
+        try {
+          const parsed = new URL(urlStr, window.location.href);
+          parsed.searchParams.set('key', EP_CLIENT_KEY);
+          parsed.searchParams.set('ep_t', timestamp);
+          parsed.searchParams.set('ep_sig', fastSig);
+          urlStr = parsed.toString();
+        } catch (e) {
+          const sep = urlStr.includes('?') ? '&' : '?';
+          urlStr = `${urlStr}${sep}key=${encodeURIComponent(EP_CLIENT_KEY)}&ep_t=${timestamp}&ep_sig=${fastSig}`;
+        }
+
+        if (typeof finalInput === 'string') {
+          finalInput = urlStr;
+        } else if (finalInput instanceof Request) {
+          finalInput = new Request(urlStr, finalInit);
         }
 
         const headers = new Headers(finalInit.headers || (input instanceof Request ? input.headers : {}));
-        if (!headers.has('X-App-Key')) {
-          headers.set('X-App-Key', EP_CLIENT_KEY);
-        }
+        headers.set('X-App-Key', EP_CLIENT_KEY);
+        headers.set('X-Client-Key', EP_CLIENT_KEY);
+        headers.set('X-EP-Timestamp', timestamp);
+        headers.set('X-EP-Signature', fastSig);
         finalInit.headers = headers;
       }
 
       return originalFetch.call(this, finalInput, finalInit);
+    };
+  }
+
+  // Intercept EventSource to inject handshake query tokens
+  if (window.EventSource) {
+    const OriginalEventSource = window.EventSource;
+    window.EventSource = function(url, eventSourceInitDict) {
+      let finalUrl = url;
+      try {
+        if (cleanApiBase && typeof url === 'string' && url.startsWith('/api')) {
+          finalUrl = cleanApiBase + url;
+        }
+        const fullParsed = new URL(finalUrl, window.location.href);
+        if (fullParsed.pathname.startsWith('/api')) {
+          const timestamp = Date.now().toString();
+          const fastSig = generateShieldHash(`${timestamp}:${fullParsed.pathname}:${EP_SHIELD_SALT}`);
+          fullParsed.searchParams.set('key', EP_CLIENT_KEY);
+          fullParsed.searchParams.set('ep_t', timestamp);
+          fullParsed.searchParams.set('ep_sig', fastSig);
+          finalUrl = fullParsed.toString();
+        }
+      } catch (e) {}
+      return new OriginalEventSource(finalUrl, eventSourceInitDict);
     };
   }
 }
