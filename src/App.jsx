@@ -237,7 +237,7 @@ export default function App() {
 
   return (
     <MusicPlayerProvider>
-      <div className={`${currentPage === 'community' ? 'h-[100dvh] max-h-[100dvh] min-h-[100dvh] overflow-hidden' : 'min-h-screen'} flex-1 flex flex-col bg-[#FDFBF7] text-black selection:bg-saffron selection:text-black overflow-x-hidden`}>
+      <div className={`${currentPage === 'community' ? 'h-[100dvh] max-h-[100dvh] overflow-hidden' : 'min-h-screen'} flex flex-col bg-[#FDFBF7] text-black selection:bg-saffron selection:text-black overflow-x-hidden`}>
         {/* Live Admin Broadcast Banner across Visitors Screens */}
         <AdminAnnouncementBanner />
 
@@ -255,7 +255,7 @@ export default function App() {
         )}
 
       {/* Main Content: Dedicated Page Views */}
-      <main className={`flex-1 min-h-0 flex flex-col ${currentPage === 'community' ? 'h-full overflow-hidden' : 'overflow-x-hidden'}`}>
+      <main className={`flex-1 ${currentPage === 'community' ? 'h-full min-h-0 flex flex-col overflow-hidden' : 'overflow-x-hidden'}`}>
         {currentPage === 'nationalists' ? (
           /* Dedicated Nationalist Influencers Page */
           <NationalistPage

@@ -9,6 +9,8 @@ export default function DonateModal({ isOpen, onClose }) {
   const upiId = 'exposepropagndu@nyes';
   const bankingName = 'Sanjay Prasad';
 
+  const qrPath = (import.meta.env?.BASE_URL || '/').replace(/\/+$/, '') + '/donate-qr.jpg';
+
   const handleCopy = () => {
     try {
       navigator.clipboard.writeText(upiId);
@@ -30,11 +32,11 @@ export default function DonateModal({ isOpen, onClose }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-xs animate-fadeIn overflow-y-auto">
       <div 
-        className="relative w-full max-w-lg bg-[#FFFDF9] border-3 border-black rounded-3xl shadow-[8px_8px_0px_#000] overflow-hidden my-auto"
+        className="relative w-full max-w-lg max-h-[92vh] flex flex-col bg-[#FFFDF9] border-3 border-black rounded-3xl shadow-[8px_8px_0px_#000] overflow-hidden my-auto"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header Bar */}
-        <div className="bg-popYellow border-b-3 border-black px-4 py-3 flex items-center justify-between">
+        <div className="shrink-0 bg-popYellow border-b-3 border-black px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="p-1.5 bg-white border-2 border-black rounded-xl shadow-[2px_2px_0px_#000] text-lg">
               🇮🇳
@@ -63,15 +65,20 @@ export default function DonateModal({ isOpen, onClose }) {
         </div>
 
         {/* Modal Body */}
-        <div className="p-4 sm:p-6 space-y-4 max-h-[82vh] overflow-y-auto no-scrollbar">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 no-scrollbar">
           
           {/* 1. UPI QR Scanner Image */}
           <div className="flex flex-col items-center justify-center bg-white border-3 border-black rounded-2xl p-4 shadow-[4px_4px_0px_#000]">
             <div className="relative group p-2 bg-[#FFFDF9] border-2 border-dashed border-gray-400 rounded-xl">
               <img
-                src="/donate-qr.jpg"
+                src={qrPath}
                 alt="UPI QR Scanner - Sanjay Prasad"
                 className="w-52 h-52 sm:w-60 sm:h-60 object-contain mx-auto rounded-lg"
+                onError={(e) => {
+                  if (e.target.src !== '/donate-qr.jpg') {
+                    e.target.src = '/donate-qr.jpg';
+                  }
+                }}
               />
               <div className="mt-2 text-center text-[11px] font-bold text-gray-600 flex items-center justify-center gap-1">
                 <QrCode className="w-3.5 h-3.5 text-black" />
@@ -81,7 +88,7 @@ export default function DonateModal({ isOpen, onClose }) {
 
             {/* Download QR Option */}
             <a
-              href="/donate-qr.jpg"
+              href={qrPath}
               download="ExposedPropagandus-UPI-QR.jpg"
               className="mt-3 inline-flex items-center gap-2 px-4 py-2 bg-white hover:bg-amber-100 border-2 border-black rounded-xl text-xs font-black uppercase shadow-[2px_2px_0px_#000] active:translate-y-0.5 transition-all text-black"
             >
@@ -150,7 +157,7 @@ export default function DonateModal({ isOpen, onClose }) {
         </div>
 
         {/* Footer Dismiss Button */}
-        <div className="bg-gray-50 border-t-2 border-black p-3 text-center">
+        <div className="shrink-0 bg-gray-50 border-t-2 border-black p-3 text-center">
           <button
             type="button"
             onClick={onClose}

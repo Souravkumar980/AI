@@ -5,11 +5,14 @@ import './index.css';
 
 // Dynamic Cloudflare / Remote API Base URL Interceptor & App Key Protection
 export const EP_CLIENT_KEY = 'ep-client-v1-bharat-first-2024';
+export const DEFAULT_API_BASE_URL = 'https://exposed-api.exposedpropagandu.workers.dev';
+
 const rawApiBase = (typeof window !== 'undefined' && window.__API_BASE_URL__) ||
   import.meta.env?.VITE_API_BASE_URL ||
   (typeof localStorage !== 'undefined' ? localStorage.getItem('ep_api_base_url') : '') ||
-  '';
-const cleanApiBase = rawApiBase ? rawApiBase.replace(/\/$/, '') : '';
+  DEFAULT_API_BASE_URL;
+
+const cleanApiBase = rawApiBase ? rawApiBase.replace(/\/+$/, '') : '';
 
 if (typeof window !== 'undefined') {
   window.__API_BASE_URL__ = cleanApiBase;
@@ -27,12 +30,32 @@ if (typeof window !== 'undefined') {
         urlStr = input;
         if (cleanApiBase && urlStr.startsWith('/api')) {
           finalInput = cleanApiBase + urlStr;
+          urlStr = finalInput;
         }
       } else if (input instanceof Request) {
         urlStr = input.url;
+        try {
+          const parsed = new URL(input.url, window.location.href);
+          if (cleanApiBase && parsed.pathname.startsWith('/api')) {
+            const newUrl = cleanApiBase + parsed.pathname + parsed.search;
+            finalInput = new Request(newUrl, input);
+            urlStr = newUrl;
+          }
+        } catch (e) {}
       }
 
-      if (urlStr.includes('/api')) {
+      if (urlStr && urlStr.includes('/api')) {
+        // Append client key query param (?key=...) to ensure seamless access without CORS preflight failures
+        if (!urlStr.includes('key=')) {
+          const separator = urlStr.includes('?') ? '&' : '?';
+          urlStr = `${urlStr}${separator}key=${encodeURIComponent(EP_CLIENT_KEY)}`;
+          if (typeof finalInput === 'string') {
+            finalInput = urlStr;
+          } else if (finalInput instanceof Request) {
+            finalInput = new Request(urlStr, finalInit);
+          }
+        }
+
         const headers = new Headers(finalInit.headers || (input instanceof Request ? input.headers : {}));
         if (!headers.has('X-App-Key')) {
           headers.set('X-App-Key', EP_CLIENT_KEY);

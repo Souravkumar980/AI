@@ -3,22 +3,6 @@
 @tailwind utilities;
 
 @layer base {
-  html, body {
-    height: 100%;
-    min-height: 100%;
-    width: 100%;
-    margin: 0;
-    padding: 0;
-  }
-  #root {
-    height: 100%;
-    min-height: 100%;
-    width: 100%;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-  }
   html {
     scroll-behavior: smooth;
     overflow-x: hidden;
@@ -28,6 +12,13 @@
     background-color: #f8fafc;
     color: #0f172a;
     -webkit-tap-highlight-color: transparent;
+    margin: 0;
+    padding: 0;
+    min-height: 100vh;
+  }
+  #root {
+    min-height: 100vh;
+    width: 100%;
   }
 }
 
@@ -153,8 +144,6 @@
 }
 
 /* Hide scrollbar thumb for horizontal and vertical scroll on chat & compact containers */
-.no-scrollbar,
-.chat-no-scrollbar,
 .no-scrollbar::-webkit-scrollbar,
 .chat-no-scrollbar::-webkit-scrollbar {
   display: none !important;

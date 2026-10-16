@@ -5,9 +5,9 @@ export default function Footer({ onOpenSubmit, onOpenSuggest, onSelectPage, onOp
   const currentYear = new Date().getFullYear();
 
   return (
-    <footer className="bg-[#0f172a] text-white border-t-3 border-black pt-10 pb-8 relative">
+    <footer className="bg-[#0f172a] text-white border-t-3 border-black py-6 sm:py-8 relative">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 sm:gap-8 mb-6">
           
           {/* Brand & Slogan */}
           <div className="space-y-3">
@@ -66,7 +66,7 @@ export default function Footer({ onOpenSubmit, onOpenSuggest, onSelectPage, onOp
                   }}
                   className="hover:text-popYellow transition-colors text-left text-amber-300 font-bold"
                 >
-                  → Sovereign Community Hub (Public Chat &amp; Private Channels)
+                  → Sovereign Community Hub
                 </button>
               </li>
               <li>
@@ -111,22 +111,12 @@ export default function Footer({ onOpenSubmit, onOpenSuggest, onSelectPage, onOp
             <div className="pt-2 text-[11px] font-mono text-gray-400">
               Anti-Propaganda Citizens Network • Bharat
             </div>
-            {onOpenDonate && (
-              <div className="pt-3">
-                <button
-                  onClick={onOpenDonate}
-                  className="px-3.5 py-1.5 bg-popYellow hover:bg-yellow-400 text-black border-2 border-black rounded-xl text-xs font-black uppercase shadow-[2px_2px_0px_#000] flex items-center gap-1.5"
-                >
-                  <span>❤️ Donate (UPI)</span>
-                </button>
-              </div>
-            )}
           </div>
 
         </div>
 
         {/* Bottom copyright line */}
-        <div className="pt-6 border-t border-gray-800 flex flex-col sm:flex-row items-center justify-between text-xs text-gray-400 font-mono gap-2">
+        <div className="pt-5 border-t border-gray-800 flex flex-col sm:flex-row items-center justify-between text-xs text-gray-400 font-mono gap-2">
           <div className="flex items-center gap-2">
             <IndianFlagLogo className="w-4 h-3" />
             <span>Exposed Propagandus &copy; {currentYear} Made with 💖 in INDIA by Nationalist GenZ 🔥</span>
@@ -136,9 +126,9 @@ export default function Footer({ onOpenSubmit, onOpenSuggest, onSelectPage, onOp
             {onOpenDonate && (
               <button
                 onClick={onOpenDonate}
-                className="text-popYellow font-bold hover:underline"
+                className="text-popYellow font-bold hover:underline flex items-center gap-1"
               >
-                ❤️ Support the Devs
+                <span>❤️ Donate (UPI)</span>
               </button>
             )}
             <span>Bharat Mata ki Jai <IndianFlagLogo className="w-4 h-3" /> </span>
