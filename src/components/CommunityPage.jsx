@@ -2066,7 +2066,7 @@ export default function CommunityPage({ onSelectPage }) {
               <span className="font-comic tracking-wider">HOME</span>
             </button>
 
-            <h1 className="font-comic text-sm sm:text-lg md:text-2xl text-black leading-none flex items-center gap-1 sm:gap-2 shrink-0">
+            <h1 className="hidden md:flex font-comic text-sm sm:text-lg md:text-2xl text-black leading-none items-center gap-1 sm:gap-2 shrink-0">
               <span>COMMUNITY</span>
               <span className="text-saffron-dark hidden xs:inline">CENTRAL</span>
               <IndianFlagLogo size="xs" />
@@ -2100,20 +2100,19 @@ export default function CommunityPage({ onSelectPage }) {
           {/* User Account & Actions Bar */}
           <div className="flex items-center gap-1.5 sm:gap-2">
             
-            {/* Donate / Support Button */}
+            {/* Donate / Support Button (Desktop Only: heart-only) */}
             <button
               onClick={() => setIsDonateOpen(true)}
-              className="px-2.5 sm:px-3 py-1.5 bg-popYellow hover:bg-yellow-400 text-black border-2 border-black rounded-xl text-xs font-black uppercase shadow-[2px_2px_0px_#000] flex items-center gap-1.5 transition-all active:translate-y-0.5 shrink-0"
+              className="hidden md:flex p-2 bg-popYellow hover:bg-yellow-400 text-black border-2 border-black rounded-xl shadow-[2px_2px_0px_#000] items-center justify-center transition-all active:translate-y-0.5 shrink-0"
               title="Support / Donate to the Developer Team"
             >
-              <Heart className="w-3.5 h-3.5 text-popRed fill-popRed shrink-0" />
-              <span className="font-comic tracking-wider">DONATE</span>
+              <Heart className="w-4 h-4 text-popRed fill-popRed" />
             </button>
 
-            {/* User Search Button */}
+            {/* User Search Button (Desktop Only) */}
             <button
               onClick={() => setIsUserSearchModalOpen(true)}
-              className="p-2 bg-white hover:bg-amber-100 border-2 border-black rounded-xl text-black font-black shadow-[2px_2px_0px_#000] transition-all"
+              className="hidden md:flex p-2 bg-white hover:bg-amber-100 border-2 border-black rounded-xl text-black font-black shadow-[2px_2px_0px_#000] transition-all"
               title="Search Friends & Chat"
             >
               <Search className="w-4 h-4" />
@@ -2182,6 +2181,37 @@ export default function CommunityPage({ onSelectPage }) {
 
           </div>
 
+        </div>
+
+        {/* Mobile Sub-Header Division: Title, Search & Heart-Only Donate Icon */}
+        <div className="md:hidden border-t-2 border-black bg-[#FFFDF9] px-3 sm:px-6 py-2 flex items-center justify-between gap-2 shadow-xs">
+          <h1 className="font-comic text-sm sm:text-lg md:text-2xl text-black leading-none flex items-center gap-1 sm:gap-2 shrink-0">
+            <span>COMMUNITY</span>
+            <span className="text-saffron-dark">CENTRAL</span>
+            <IndianFlagLogo size="xs" />
+          </h1>
+
+          <div className="flex items-center gap-1.5 shrink-0">
+            {/* User Search Button */}
+            <button
+              type="button"
+              onClick={() => setIsUserSearchModalOpen(true)}
+              className="p-2 bg-white hover:bg-amber-100 border-2 border-black rounded-xl text-black font-black shadow-[2px_2px_0px_#000] transition-all active:translate-y-0.5"
+              title="Search Friends & Chat"
+            >
+              <Search className="w-4 h-4" />
+            </button>
+
+            {/* Donate Heart Icon Only */}
+            <button
+              type="button"
+              onClick={() => setIsDonateOpen(true)}
+              className="p-2 bg-popYellow hover:bg-yellow-400 text-black border-2 border-black rounded-xl shadow-[2px_2px_0px_#000] flex items-center justify-center transition-all active:translate-y-0.5 shrink-0"
+              title="Support / Donate"
+            >
+              <Heart className="w-4 h-4 text-popRed fill-popRed" />
+            </button>
+          </div>
         </div>
       </header>
 

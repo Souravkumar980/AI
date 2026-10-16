@@ -83,6 +83,18 @@ export default function Header({
             )}
           </div>
         </div>
+
+        {/* Donate Option Button in Top Right Corner */}
+        {onOpenDonate && (
+          <button
+            onClick={onOpenDonate}
+            className="px-2 sm:px-2.5 py-0.5 bg-popYellow hover:bg-yellow-400 text-black border border-black rounded-lg text-[10px] font-black uppercase shadow-[1px_1px_0px_#000] flex items-center gap-1 active:translate-y-0.5 transition-all shrink-0"
+            title="Support / Donate to Developer Team"
+          >
+            <Heart className="w-3 h-3 text-popRed fill-popRed" />
+            <span>Donate</span>
+          </button>
+        )}
       </div>
 
       {/* Main Navigation Bar */}
@@ -192,35 +204,8 @@ export default function Header({
         {/* Mobile menu trigger */}
         <div className="flex items-center gap-1.5 md:hidden">
           <button
-            onClick={onOpenDonate}
-            className="bento-btn bg-popYellow text-black px-2 py-1.5 text-[11px] uppercase flex items-center gap-1 font-black shadow-[2px_2px_0px_#000]"
-            title="Donate"
-          >
-            <Heart className="w-3.5 h-3.5 text-popRed fill-popRed" />
-            <span>Donate</span>
-          </button>
-
-          {activePage === 'nationalists' ? (
-            <button
-              onClick={onOpenSuggest}
-              className="bento-btn bg-tirangaGreen text-white px-2.5 py-1.5 text-[11px] uppercase flex items-center gap-1 font-black shadow-[2px_2px_0px_#000]"
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Suggest</span>
-            </button>
-          ) : (
-            <button
-              onClick={onOpenSubmit}
-              className="bento-btn bg-saffron text-black px-2.5 py-1.5 text-[11px] uppercase flex items-center gap-1 font-black shadow-[2px_2px_0px_#000]"
-            >
-              <PlusCircle className="w-3.5 h-3.5" />
-              <span>Submit</span>
-            </button>
-          )}
-
-          <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            className="p-2 bg-gray-100 border-2 border-black rounded-xl shadow-[2px_2px_0px_#000]"
+            className="p-2 bg-gray-100 hover:bg-gray-200 border-2 border-black rounded-xl shadow-[2px_2px_0px_#000] active:translate-y-0.5 transition-all"
             aria-label="Toggle menu"
           >
             {mobileMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}

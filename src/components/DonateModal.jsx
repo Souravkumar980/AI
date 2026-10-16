@@ -145,7 +145,7 @@ export default function DonateModal({ isOpen, onClose }) {
               <span>Message From Founder &amp; Dev Team</span>
             </div>
             <p className="text-xs sm:text-[13px] text-gray-800 font-medium leading-relaxed italic bg-amber-50/60 p-3 rounded-xl border border-amber-200">
-              &ldquo;Hi I&apos;m OM Solo Developer with fellow Friends Who Always Try to Strenghten Bharat by Digitaly, also I doing part-time stuff to take Kharcha Paani, Me and My Team Decide to enlarge this Digital Movement across Bharat for that we Need Support so If You&apos;re Able Contribute 1₹ Then Please do it, Right now we are using Free domains for Host it, also we try to make this App AI INtegrated by AI Fact checker and many more Future Updates, For that we Need Your Support. Thank You Bharat Mata ki Jai, Jai Shri Ram.&rdquo;
+              &ldquo;Hi I&apos;m OM Solo Developer with fellow Friends Who Always Try to Strengthen Bharat by Digitaly, also I doing part-time stuff to manage Kharcha Paani, Me and My Team decided to enlarge this Digital movement across Bharat for that we Need Your Support so If You&apos;re Able Contribute Minimum 10₹ Then Please do it, Right now we are using Free domains for Host it, also we try to make this App AI INtegrated by AI Fact checker and many more Future Updates, For that we Need Your Support. Thank You Bharat Mata ki Jai, Jai Shri Ram.&rdquo;
             </p>
           </div>
 
