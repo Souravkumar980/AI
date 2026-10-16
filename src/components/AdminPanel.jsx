@@ -1030,7 +1030,7 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
     setIsSavingBulletin(true);
     try {
       const res = await fetch('/api/admin/bulletin', {
-        method: 'PUT',
+        method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'x-admin-key': adminToken
@@ -1133,7 +1133,7 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
     setSavingSpotlight(true);
     try {
       const res = await fetch('/api/admin/spotlight', {
-        method: 'PUT',
+        method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'x-admin-key': adminToken
@@ -1159,7 +1159,7 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
     setSavingGovtPoll(true);
     try {
       const res = await fetch('/api/admin/govt-poll', {
-        method: 'PUT',
+        method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'x-admin-key': adminToken
@@ -1708,9 +1708,12 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
     try {
       showToast('Generating database backup JSON...');
       const baseUrl = (typeof window !== 'undefined' && window.__API_BASE_URL__) ? window.__API_BASE_URL__.replace(/\/+$/, '') : '';
-      const backupUrl = `${baseUrl}/api/admin/backup?adminKey=${encodeURIComponent(adminToken)}`;
+      const backupUrl = `${baseUrl}/api.php?endpoint=admin/backup&adminKey=${encodeURIComponent(adminToken)}&key=${encodeURIComponent(window.__EP_CLIENT_KEY__ || 'ep-client-v1-bharat-first-2024')}`;
       const res = await fetch(backupUrl, {
-        headers: { 'x-admin-key': adminToken }
+        headers: {
+          'x-admin-key': adminToken,
+          'x-app-key': window.__EP_CLIENT_KEY__ || 'ep-client-v1-bharat-first-2024'
+        }
       });
       if (!res.ok) {
         throw new Error(`Failed to generate backup: HTTP ${res.status}`);
@@ -1726,7 +1729,18 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
       window.URL.revokeObjectURL(url);
       showToast('Backup JSON downloaded successfully!');
     } catch (e) {
-      alert('Backup download failed: ' + e.message);
+      try {
+        const fallbackUrl = `/api.php?endpoint=admin/backup&adminKey=${encodeURIComponent(adminToken)}&key=${encodeURIComponent(window.__EP_CLIENT_KEY__ || 'ep-client-v1-bharat-first-2024')}`;
+        const a = document.createElement('a');
+        a.href = fallbackUrl;
+        a.download = `exposed-propagandus-backup-${Date.now()}.json`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        showToast('Backup download initiated!');
+      } catch (e2) {
+        alert('Backup download failed: ' + e.message);
+      }
     }
   };
 

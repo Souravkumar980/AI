@@ -158,6 +158,40 @@ async function generateUploadHtml() {
       if (origFetch) {
         window.fetch = function(input, init) {
           init = init || {};
+          var rawUrl = typeof input === 'string' ? input : (input instanceof Request ? input.url : '');
+          var isApiCall = rawUrl && (rawUrl.indexOf('/api') !== -1 || rawUrl.indexOf('api.php') !== -1);
+          var finalInput = input;
+          if (isApiCall) {
+            try {
+              var parsed = new URL(rawUrl, window.location.href);
+              if (parsed.pathname.indexOf('/api/') !== -1) {
+                var ep = parsed.pathname.substring(parsed.pathname.indexOf('/api/') + 5);
+                parsed.pathname = '/api.php';
+                if (ep) {
+                  parsed.searchParams.set('endpoint', ep);
+                }
+              } else if (parsed.pathname.endsWith('/api') || parsed.pathname === '/api') {
+                parsed.pathname = '/api.php';
+              }
+              if (!init.credentials) {
+                init.credentials = 'same-origin';
+              }
+              var origMethod = (init.method || (input instanceof Request ? input.method : 'GET')).toUpperCase();
+              if (['PUT', 'PATCH', 'DELETE'].indexOf(origMethod) !== -1) {
+                init.method = 'POST';
+                parsed.searchParams.set('_method', origMethod);
+              }
+              if (!parsed.searchParams.has('key')) {
+                parsed.searchParams.set('key', 'ep-client-v1-bharat-first-2024');
+              }
+              var adm = '';
+              try { adm = localStorage.getItem('propagandus_admin_key') || localStorage.getItem('admin_token') || ''; } catch(e){}
+              if (adm && (parsed.searchParams.get('endpoint') || '').indexOf('admin') === 0) {
+                parsed.searchParams.set('adminKey', adm);
+              }
+              finalInput = parsed.toString();
+            } catch(e) {}
+          }
           var headers = new Headers(init.headers || (input instanceof Request ? input.headers : {}));
           if (!headers.has('x-app-key')) {
             headers.set('x-app-key', 'ep-client-v1-bharat-first-2024');
@@ -173,7 +207,7 @@ async function generateUploadHtml() {
             headers.set('authorization', 'Bearer ' + adminKey);
           }
           init.headers = headers;
-          return origFetch.call(this, input, init);
+          return origFetch.call(this, finalInput, init);
         };
       }
     })();

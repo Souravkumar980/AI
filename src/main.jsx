@@ -40,60 +40,69 @@ if (typeof window !== 'undefined') {
       const finalInit = init ? { ...init } : {};
 
       // Determine if this is an API call
-      let urlStr = '';
-      if (typeof input === 'string') {
-        urlStr = input;
-        if (cleanApiBase && urlStr.startsWith('/api')) {
-          finalInput = cleanApiBase + urlStr;
-          urlStr = finalInput;
-        }
-      } else if (input instanceof Request) {
-        urlStr = input.url;
-        try {
-          const parsed = new URL(input.url, window.location.href);
-          if (cleanApiBase && parsed.pathname.startsWith('/api')) {
-            const newUrl = cleanApiBase + parsed.pathname + parsed.search;
-            finalInput = new Request(newUrl, input);
-            urlStr = newUrl;
-          }
-        } catch (e) {}
-      }
+      let rawUrl = typeof input === 'string' ? input : (input instanceof Request ? input.url : '');
+      const isApiCall = rawUrl && (rawUrl.includes('/api') || rawUrl.includes('api.php'));
 
-      if (urlStr && urlStr.includes('/api')) {
-        let pathname = '/api';
+      if (isApiCall) {
+        let parsedUrl;
         try {
-          const parsed = new URL(urlStr, window.location.href);
-          pathname = parsed.pathname;
-        } catch (e) {}
+          parsedUrl = new URL(rawUrl, window.location.href);
+        } catch (e) {
+          return originalFetch.call(this, input, init);
+        }
+
+        // Apply cleanApiBase if specified and URL is relative
+        if (cleanApiBase && (rawUrl.startsWith('/api') || parsedUrl.origin === window.location.origin)) {
+          try {
+            const apiBaseUrl = new URL(cleanApiBase, window.location.href);
+            parsedUrl.protocol = apiBaseUrl.protocol;
+            parsedUrl.host = apiBaseUrl.host;
+            parsedUrl.port = apiBaseUrl.port;
+          } catch (e) {}
+        }
+
+        // NATIVE PHP API ROUTING:
+        // Rewrite /api/<endpoint> directly to /api.php?endpoint=<endpoint> to ensure 100% reliability
+        // on Apache/FastCGI/InfinityFree even if .htaccess mod_rewrite is inactive or missing.
+        const pathname = parsedUrl.pathname;
+        if (pathname.includes('/api/')) {
+          const endpoint = pathname.substring(pathname.indexOf('/api/') + 5);
+          parsedUrl.pathname = '/api.php';
+          if (endpoint) {
+            parsedUrl.searchParams.set('endpoint', endpoint);
+          }
+        } else if (pathname.endsWith('/api') || pathname === '/api') {
+          parsedUrl.pathname = '/api.php';
+        }
+
+        // Always include same-origin credentials so the InfinityFree __test cookie is preserved
+        if (!finalInit.credentials) {
+          finalInit.credentials = 'same-origin';
+        }
+
+        // Method override for shared web hosts (InfinityFree / FastCGI block PUT, PATCH, DELETE with 405 Method Not Allowed)
+        let originalMethod = (finalInit.method || (input instanceof Request ? input.method : 'GET')).toUpperCase();
+        if (['PUT', 'PATCH', 'DELETE'].includes(originalMethod)) {
+          finalInit.method = 'POST';
+          parsedUrl.searchParams.set('_method', originalMethod);
+        }
 
         const timestamp = Date.now().toString();
-        const fastSig = generateShieldHash(`${timestamp}:${pathname}:${EP_SHIELD_SALT}`);
+        const fastSig = generateShieldHash(`${timestamp}:${parsedUrl.pathname}:${EP_SHIELD_SALT}`);
         const adminKey = (typeof localStorage !== 'undefined')
           ? (localStorage.getItem('propagandus_admin_key') || localStorage.getItem('admin_token') || '')
           : '';
 
-        // Set security query parameters
-        try {
-          const parsed = new URL(urlStr, window.location.href);
-          parsed.searchParams.set('key', EP_CLIENT_KEY);
-          parsed.searchParams.set('ep_t', timestamp);
-          parsed.searchParams.set('ep_sig', fastSig);
-          if (adminKey && pathname.includes('/api/admin')) {
-            parsed.searchParams.set('adminKey', adminKey);
-          }
-          urlStr = parsed.toString();
-        } catch (e) {
-          const sep = urlStr.includes('?') ? '&' : '?';
-          urlStr = `${urlStr}${sep}key=${encodeURIComponent(EP_CLIENT_KEY)}&ep_t=${timestamp}&ep_sig=${fastSig}`;
-          if (adminKey && urlStr.includes('/api/admin')) {
-            urlStr += `&adminKey=${encodeURIComponent(adminKey)}`;
-          }
+        // Query parameters
+        if (!parsedUrl.searchParams.has('key')) {
+          parsedUrl.searchParams.set('key', EP_CLIENT_KEY);
         }
+        parsedUrl.searchParams.set('ep_t', timestamp);
+        parsedUrl.searchParams.set('ep_sig', fastSig);
 
-        if (typeof finalInput === 'string') {
-          finalInput = urlStr;
-        } else if (finalInput instanceof Request) {
-          finalInput = new Request(urlStr, finalInit);
+        const currentEndpoint = parsedUrl.searchParams.get('endpoint') || '';
+        if (adminKey && currentEndpoint.startsWith('admin')) {
+          parsedUrl.searchParams.set('adminKey', adminKey);
         }
 
         const headers = new Headers(finalInit.headers || (input instanceof Request ? input.headers : {}));
@@ -101,6 +110,9 @@ if (typeof window !== 'undefined') {
         headers.set('X-Client-Key', EP_CLIENT_KEY);
         headers.set('X-EP-Timestamp', timestamp);
         headers.set('X-EP-Signature', fastSig);
+        if (['PUT', 'PATCH', 'DELETE'].includes(originalMethod)) {
+          headers.set('X-HTTP-Method-Override', originalMethod);
+        }
         if (adminKey) {
           headers.set('X-Admin-Key', adminKey);
           if (!headers.has('Authorization')) {
@@ -108,30 +120,41 @@ if (typeof window !== 'undefined') {
           }
         }
         finalInit.headers = headers;
+        finalInput = parsedUrl.toString();
       }
 
       return originalFetch.call(this, finalInput, finalInit);
     };
   }
 
-  // Intercept EventSource to inject handshake query tokens
+  // Intercept EventSource to inject handshake query tokens and route to api.php
   if (window.EventSource) {
     const OriginalEventSource = window.EventSource;
     window.EventSource = function(url, eventSourceInitDict) {
       let finalUrl = url;
       try {
-        if (cleanApiBase && typeof url === 'string' && url.startsWith('/api')) {
-          finalUrl = cleanApiBase + url;
+        const parsed = new URL(url, window.location.href);
+        if (cleanApiBase && (url.startsWith('/api') || parsed.origin === window.location.origin)) {
+          const apiBaseUrl = new URL(cleanApiBase, window.location.href);
+          parsed.protocol = apiBaseUrl.protocol;
+          parsed.host = apiBaseUrl.host;
+          parsed.port = apiBaseUrl.port;
         }
-        const fullParsed = new URL(finalUrl, window.location.href);
-        if (fullParsed.pathname.startsWith('/api')) {
-          const timestamp = Date.now().toString();
-          const fastSig = generateShieldHash(`${timestamp}:${fullParsed.pathname}:${EP_SHIELD_SALT}`);
-          fullParsed.searchParams.set('key', EP_CLIENT_KEY);
-          fullParsed.searchParams.set('ep_t', timestamp);
-          fullParsed.searchParams.set('ep_sig', fastSig);
-          finalUrl = fullParsed.toString();
+        if (parsed.pathname.includes('/api/')) {
+          const endpoint = parsed.pathname.substring(parsed.pathname.indexOf('/api/') + 5);
+          parsed.pathname = '/api.php';
+          if (endpoint) {
+            parsed.searchParams.set('endpoint', endpoint);
+          }
+        } else if (parsed.pathname.endsWith('/api') || parsed.pathname === '/api') {
+          parsed.pathname = '/api.php';
         }
+        const timestamp = Date.now().toString();
+        const fastSig = generateShieldHash(`${timestamp}:${parsed.pathname}:${EP_SHIELD_SALT}`);
+        parsed.searchParams.set('key', EP_CLIENT_KEY);
+        parsed.searchParams.set('ep_t', timestamp);
+        parsed.searchParams.set('ep_sig', fastSig);
+        finalUrl = parsed.toString();
       } catch (e) {}
       return new OriginalEventSource(finalUrl, eventSourceInitDict);
     };
