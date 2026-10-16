@@ -23,6 +23,55 @@ import {
 import { playRandomPropaganduSound } from '../utils/audioPlayer';
 import { useLanguage } from '../context/LanguageContext';
 
+// Wanted Level 5-Star Rating Component
+function WantedRatingBar({ entityId, ratingAvg, ratingCount, myRating, onRate }) {
+  const currentAvg = ratingAvg !== undefined && ratingAvg !== null ? Number(ratingAvg) : 5.0;
+  const totalCount = Number(ratingCount) || 0;
+  const userScore = myRating !== undefined && myRating !== null ? Number(myRating) : null;
+
+  return (
+    <div
+      className="flex flex-col items-start gap-1 select-none"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div className="flex items-center gap-1.5 flex-wrap">
+        <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-popRed bg-red-100 border border-red-300 px-1.5 py-0.5 rounded font-mono">
+          WANTED LEVEL
+        </span>
+        <div className="flex items-center gap-0.5">
+          {[1, 2, 3, 4, 5].map((star) => {
+            const isFilled = userScore ? star <= userScore : star <= Math.round(currentAvg);
+            return (
+              <button
+                key={star}
+                type="button"
+                onClick={() => onRate(entityId, star)}
+                title={`Rate Wanted Level ${star} / 5 stars`}
+                className="p-0.5 text-base sm:text-lg hover:scale-125 transition-transform active:scale-95 cursor-pointer leading-none"
+              >
+                <span className={isFilled ? 'text-amber-500 drop-shadow-[0_1px_2px_rgba(245,158,11,0.6)]' : 'text-gray-300'}>
+                  ★
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        <span className="font-mono font-black text-xs text-black">
+          {currentAvg.toFixed(1)}
+        </span>
+      </div>
+      <div className="flex items-center gap-2 text-[10px] text-gray-500 font-bold">
+        <span>👥 {totalCount} {totalCount === 1 ? 'user rated' : 'users rated'}</span>
+        {userScore && (
+          <span className="text-tirangaGreen font-mono font-black">
+            (Your Vote: {userScore}★)
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function PropagandusDatabase({ onOpenSubmit, onOpenReport, onOpenShareCard, reloadTrigger }) {
   const { t } = useLanguage();
   const [entities, setEntities] = useState([]);
@@ -38,7 +87,7 @@ export default function PropagandusDatabase({ onOpenSubmit, onOpenReport, onOpen
         if (Array.isArray(data) && data.length > 0) {
           const defaultIds = new Set(ENTITY_CATEGORIES.map(c => c.id));
           const dynamic = data
-            .filter(d => (d.type === 'entity' || !d.type) && d.name && !defaultIds.has(d.name))
+            .filter(d => (d.type === 'propagandist' || d.type === 'propagandu' || d.type === 'entity' || !d.type) && d.name && !defaultIds.has(d.name))
             .map(d => ({ id: d.name, label: d.name, icon: 'Share2' }));
           setCategories([...ENTITY_CATEGORIES, ...dynamic]);
         }
@@ -50,25 +99,25 @@ export default function PropagandusDatabase({ onOpenSubmit, onOpenReport, onOpen
   const [sortBy, setSortBy] = useState('trending');
   // View mode: 'profile' (default, icons only) vs 'detailed'
   const [viewMode, setViewMode] = useState('profile');
-  const [upvotedIds, setUpvotedIds] = useState(() => {
+  const [userRatings, setUserRatings] = useState(() => {
     try {
-      const stored = JSON.parse(localStorage.getItem('propagandus_upvoted_ids') || '[]');
-      return new Set(Array.isArray(stored) ? stored : []);
+      const stored = JSON.parse(localStorage.getItem('propagandus_user_ratings') || '{}');
+      return (stored && typeof stored === 'object') ? stored : {};
     } catch (e) {
-      return new Set();
+      return {};
     }
   });
 
-  // Sync upvoted IDs from server for caller IP
+  // Sync ratings from server for caller IP
   useEffect(() => {
-    fetch('/api/my-votes')
+    fetch('/api/my-ratings')
       .then(res => res.json())
       .then(data => {
-        if (data?.entityVotes && Array.isArray(data.entityVotes)) {
-          setUpvotedIds(prev => {
-            const next = new Set([...prev, ...data.entityVotes]);
+        if (data?.ratings && typeof data.ratings === 'object') {
+          setUserRatings(prev => {
+            const next = { ...prev, ...data.ratings };
             try {
-              localStorage.setItem('propagandus_upvoted_ids', JSON.stringify([...next]));
+              localStorage.setItem('propagandus_user_ratings', JSON.stringify(next));
             } catch (e) {}
             return next;
           });
@@ -83,6 +132,33 @@ export default function PropagandusDatabase({ onOpenSubmit, onOpenReport, onOpen
     }, 180);
     return () => clearTimeout(handler);
   }, [search, selectedCategory, selectedParty, selectedInstitution, sortBy, reloadTrigger]);
+
+  // Real-time silent background polling (every 5 seconds)
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const params = new URLSearchParams();
+      if (search && search.trim()) params.append('search', search.trim());
+      if (selectedCategory !== 'All') params.append('category', selectedCategory);
+      if (selectedParty !== 'All') params.append('party', selectedParty);
+      if (selectedInstitution !== 'All') params.append('institution', selectedInstitution);
+      if (sortBy) params.append('sort', sortBy);
+
+      fetch(`/api/entities?${params.toString()}`)
+        .then(r => r.json())
+        .then(data => {
+          if (Array.isArray(data)) {
+            setEntities(prev => {
+              const prevStr = JSON.stringify(prev.map(e => `${e.id}_${e.rating_avg}_${e.rating_count}_${e.upvotes}_${e.is_verified}`));
+              const newStr = JSON.stringify(data.map(e => `${e.id}_${e.rating_avg}_${e.rating_count}_${e.upvotes}_${e.is_verified}`));
+              return prevStr !== newStr ? data : prev;
+            });
+          }
+        })
+        .catch(() => {});
+    }, 5000);
+
+    return () => clearInterval(timer);
+  }, [search, selectedCategory, selectedParty, selectedInstitution, sortBy]);
 
   const fetchEntities = async (searchQuery = search) => {
     try {
@@ -109,26 +185,37 @@ export default function PropagandusDatabase({ onOpenSubmit, onOpenReport, onOpen
     fetchEntities(search);
   };
 
-  const handleUpvote = async (id) => {
-    if (upvotedIds.has(id)) return;
+  const handleRateEntity = async (id, ratingValue) => {
     playRandomPropaganduSound();
+    setUserRatings(prev => {
+      const next = { ...prev, [id]: ratingValue };
+      try {
+        localStorage.setItem('propagandus_user_ratings', JSON.stringify(next));
+      } catch (e) {}
+      return next;
+    });
+
     try {
-      const res = await fetch(`/api/entities/${id}/upvote`, { method: 'POST' });
+      const res = await fetch(`/api/propagandus/${id}/rating`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rating: ratingValue })
+      });
       const data = await res.json();
-      if (data.success || data.alreadyVoted) {
-        setUpvotedIds(prev => {
-          const next = new Set([...prev, id]);
-          try {
-            localStorage.setItem('propagandus_upvoted_ids', JSON.stringify([...next]));
-          } catch (e) {}
-          return next;
-        });
-        if (data.upvotes !== undefined) {
-          setEntities(prev => prev.map(item => item.id === id ? { ...item, upvotes: data.upvotes } : item));
-        }
+      if (data.success) {
+        setEntities(prev => prev.map(item => {
+          if (item.id === id) {
+            return {
+              ...item,
+              rating_avg: data.rating_avg !== undefined ? data.rating_avg : item.rating_avg,
+              rating_count: data.rating_count !== undefined ? data.rating_count : item.rating_count
+            };
+          }
+          return item;
+        }));
       }
     } catch (e) {
-      console.error('Upvote error', e);
+      console.error('Rating error', e);
     }
   };
 
@@ -360,12 +447,13 @@ export default function PropagandusDatabase({ onOpenSubmit, onOpenReport, onOpen
           /* ========================================================= */
           /* PROFILE VIEW (DEFAULT): Profile Pic, Name & Social Icons Only */
           /* ========================================================= */
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
             {entities.map((item) => {
               const hasX = !!item.handle_x;
               const hasYt = !!item.handle_yt;
               const hasInsta = !!item.handle_insta;
               const extraLinks = parseOtherLinks(item.other_links);
+              const myRating = userRatings[item.id];
 
               return (
                 <div
@@ -377,73 +465,99 @@ export default function PropagandusDatabase({ onOpenSubmit, onOpenReport, onOpen
                       playRandomPropaganduSound();
                     }
                   }}
-                  className="bento-card p-4 bg-white border-2 border-black shadow-[4px_4px_0px_#000] flex flex-col items-center justify-between text-center hover:-translate-y-1 hover:shadow-[6px_6px_0px_#000] transition-all cursor-pointer"
+                  className="bento-card p-3.5 sm:p-4 bg-white border-3 border-black shadow-[4px_4px_0px_#000] hover:shadow-[6px_6px_0px_#000] hover:-translate-y-0.5 transition-all flex flex-row items-center gap-3.5 sm:gap-4 cursor-pointer"
                 >
-                  <div className="flex flex-col items-center w-full">
+                  {/* Left: Avatar with Pop Art 3D Border like Screenshot */}
+                  <div className="relative shrink-0">
                     <img
                       src={item.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(item.name || 'Propagandu')}&background=E1306C&color=ffffff&size=256&bold=true`}
                       alt={item.name}
-                      className="w-18 h-18 sm:w-20 sm:h-20 rounded-2xl border-2 border-black object-cover shadow-[2px_2px_0px_#000] bg-white mb-2.5"
+                      className="w-20 h-20 sm:w-22 sm:h-22 rounded-2xl border-3 border-black shadow-[3px_3px_0px_#000] object-cover bg-white"
                       onError={(e) => {
                         e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(item.name || 'Propagandu')}&background=E1306C&color=ffffff&size=256&bold=true`;
                       }}
                     />
-                    <h3 className="font-comic text-sm sm:text-base text-black leading-tight line-clamp-2" title={item.name}>
-                      {item.name}
-                    </h3>
                   </div>
 
-                  {/* Social Icons Only (No handle names) */}
-                  <div className="flex flex-wrap items-center justify-center gap-1.5 mt-3 pt-2.5 border-t border-gray-200 w-full">
-                    {hasX && (
-                      <a
-                        href={`https://x.com/${item.handle_x}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="w-7 h-7 rounded-lg bg-black text-white hover:bg-gray-800 border border-black flex items-center justify-center shadow-xs transition-transform active:scale-95"
-                        title={`X: @${item.handle_x}`}
+                  {/* Right: Readable Pop Art Name, Social Icons & Wanted Rating */}
+                  <div className="flex-1 min-w-0 flex flex-col justify-between space-y-1.5">
+                    <div>
+                      <h3
+                        className="font-comic font-black text-black text-sm sm:text-base uppercase tracking-wide leading-tight truncate"
+                        title={item.name}
                       >
-                        <TwitterIcon className="w-3.5 h-3.5 fill-current" />
-                      </a>
-                    )}
-                    {hasYt && (
-                      <a
-                        href={`https://youtube.com/@${item.handle_yt}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="w-7 h-7 rounded-lg bg-red-600 text-white hover:bg-red-700 border border-black flex items-center justify-center shadow-xs transition-transform active:scale-95"
-                        title={`YouTube: @${item.handle_yt}`}
-                      >
-                        <YoutubeIcon className="w-3.5 h-3.5 fill-current" />
-                      </a>
-                    )}
-                    {hasInsta && (
-                      <a
-                        href={`https://instagram.com/${item.handle_insta}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="w-7 h-7 rounded-lg bg-gradient-to-r from-purple-600 via-pink-600 to-amber-500 text-white border border-black flex items-center justify-center shadow-xs transition-transform active:scale-95"
-                        title={`Instagram: @${item.handle_insta}`}
-                      >
-                        <InstagramIcon className="w-3.5 h-3.5 fill-current" />
-                      </a>
-                    )}
-                    {extraLinks.map((link, lIdx) => {
-                      const info = getSocialPlatformInfo(link);
-                      const Icon = info.icon;
-                      return (
+                        {item.name}
+                      </h3>
+                      {item.party && (
+                        <div className="text-[10px] text-gray-500 font-bold truncate">
+                          {item.party.split('–')[0]}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Social Icons (Rounded squircle icons with black border like screenshot) */}
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {hasX && (
                         <a
-                          key={lIdx}
-                          href={ensureUrl(link)}
+                          href={`https://x.com/${item.handle_x}`}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className={`w-7 h-7 rounded-lg ${info.bgClass} border border-black flex items-center justify-center shadow-xs transition-transform active:scale-95`}
-                          title={`${info.name}: ${link}`}
+                          className="w-7 h-7 rounded-lg bg-black text-white hover:bg-gray-800 border-2 border-black flex items-center justify-center shadow-[1px_1px_0px_#000] transition-transform active:scale-95"
+                          title={`X: @${item.handle_x}`}
                         >
-                          <Icon className="w-3.5 h-3.5 fill-current" />
+                          <TwitterIcon className="w-3.5 h-3.5 fill-current" />
                         </a>
-                      );
-                    })}
+                      )}
+                      {hasYt && (
+                        <a
+                          href={`https://youtube.com/@${item.handle_yt}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="w-7 h-7 rounded-lg bg-[#FF0000] text-white hover:bg-red-700 border-2 border-black flex items-center justify-center shadow-[1px_1px_0px_#000] transition-transform active:scale-95"
+                          title={`YouTube: @${item.handle_yt}`}
+                        >
+                          <YoutubeIcon className="w-3.5 h-3.5 fill-current" />
+                        </a>
+                      )}
+                      {hasInsta && (
+                        <a
+                          href={`https://instagram.com/${item.handle_insta}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="w-7 h-7 rounded-lg bg-gradient-to-tr from-[#FD1D1D] via-[#E1306C] to-[#405DE6] text-white border-2 border-black flex items-center justify-center shadow-[1px_1px_0px_#000] transition-transform active:scale-95"
+                          title={`Instagram: @${item.handle_insta}`}
+                        >
+                          <InstagramIcon className="w-3.5 h-3.5 fill-current" />
+                        </a>
+                      )}
+                      {extraLinks.map((link, lIdx) => {
+                        const info = getSocialPlatformInfo(link);
+                        const Icon = info.icon;
+                        return (
+                          <a
+                            key={lIdx}
+                            href={ensureUrl(link)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className={`w-7 h-7 rounded-lg ${info.bgClass} border-2 border-black flex items-center justify-center shadow-[1px_1px_0px_#000] transition-transform active:scale-95`}
+                            title={`${info.name}: ${link}`}
+                          >
+                            <Icon className="w-3.5 h-3.5 fill-current" />
+                          </a>
+                        );
+                      })}
+                    </div>
+
+                    {/* Wanted Rating 5-Star Bar */}
+                    <div className="pt-0.5">
+                      <WantedRatingBar
+                        entityId={item.id}
+                        ratingAvg={item.rating_avg}
+                        ratingCount={item.rating_count}
+                        myRating={myRating}
+                        onRate={handleRateEntity}
+                      />
+                    </div>
                   </div>
                 </div>
               );
@@ -459,7 +573,7 @@ export default function PropagandusDatabase({ onOpenSubmit, onOpenReport, onOpen
               const hasYt = !!item.handle_yt;
               const hasInsta = !!item.handle_insta;
               const extraLinks = parseOtherLinks(item.other_links);
-              const isUpvoted = upvotedIds.has(item.id);
+              const myRating = userRatings[item.id];
 
               return (
                 <div
@@ -614,24 +728,15 @@ export default function PropagandusDatabase({ onOpenSubmit, onOpenReport, onOpen
                     </div>
                   </div>
 
-                  {/* Card Bottom: Upvote & Evidence Link (Share Option Completely Removed) */}
-                  <div className="p-3 bg-gray-50 border-t border-gray-200 flex items-center justify-between">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleUpvote(item.id);
-                      }}
-                      disabled={isUpvoted}
-                      className={`px-3 py-1 rounded-lg border text-xs font-bold flex items-center gap-1.5 transition-all ${
-                        isUpvoted
-                          ? 'bg-tirangaGreen text-white border-tirangaGreen-dark shadow-none cursor-default'
-                          : 'bg-white hover:bg-gray-100 border-gray-300 text-gray-800'
-                      }`}
-                    >
-                      <ThumbsUp className="w-3.5 h-3.5" />
-                      <span>{item.upvotes || 0}</span>
-                      <span className="text-[10px]">{isUpvoted ? 'Exposed' : 'Expose'}</span>
-                    </button>
+                  {/* Card Bottom: Wanted Level Rating & Evidence Link (Share Option Completely Removed) */}
+                  <div className="p-3 bg-gray-50 border-t border-gray-200 flex items-center justify-between gap-2 flex-wrap">
+                    <WantedRatingBar
+                      entityId={item.id}
+                      ratingAvg={item.rating_avg}
+                      ratingCount={item.rating_count}
+                      myRating={myRating}
+                      onRate={handleRateEntity}
+                    />
 
                     {item.proof_url && (
                       <a

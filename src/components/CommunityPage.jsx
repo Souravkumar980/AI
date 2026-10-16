@@ -323,6 +323,19 @@ const SEED_MESSAGES = [];
 // Seed Channels - Clean Zero Initial State
 const SEED_CHANNELS = [];
 
+// Robust chronological message time parser
+const parseMsgTime = (m) => {
+  if (!m) return 0;
+  if (m.created_timestamp && Number(m.created_timestamp) > 0) return Number(m.created_timestamp);
+  if (m.timestamp && Number(m.timestamp) > 0) return Number(m.timestamp);
+  if (typeof m.id === 'string' && m.id.startsWith('msg_')) {
+    const parts = m.id.split('_');
+    const ts = Number(parts[1]);
+    if (ts && !isNaN(ts)) return ts;
+  }
+  return 0;
+};
+
 export default function CommunityPage({ onSelectPage }) {
   // Current logged in community user
   const [currentUser, setCurrentUser] = useState(() => {
@@ -333,6 +346,11 @@ export default function CommunityPage({ onSelectPage }) {
       return null;
     }
   });
+
+  const currentUserRef = useRef(currentUser);
+  useEffect(() => {
+    currentUserRef.current = currentUser;
+  }, [currentUser]);
 
   // All community users
   const [users, setUsers] = useState(() => {
@@ -363,7 +381,13 @@ export default function CommunityPage({ onSelectPage }) {
   const [messages, setMessages] = useState(() => {
     try {
       const saved = localStorage.getItem('ep_community_messages');
-      return saved ? JSON.parse(saved) : SEED_MESSAGES;
+      const loaded = saved ? JSON.parse(saved) : SEED_MESSAGES;
+      return Array.isArray(loaded) ? loaded.sort((a, b) => {
+        const tA = parseMsgTime(a);
+        const tB = parseMsgTime(b);
+        if (tA && tB && tA !== tB) return tA - tB;
+        return String(a.id).localeCompare(String(b.id));
+      }) : [];
     } catch {
       return SEED_MESSAGES;
     }
@@ -673,10 +697,11 @@ export default function CommunityPage({ onSelectPage }) {
   // Sync state with backend database
   const fetchCommunitySync = async () => {
     try {
+      const curUser = currentUserRef.current;
       const joinParam = new URLSearchParams(window.location.search).get('join') || '';
       const queryParams = new URLSearchParams();
-      if (currentUser?.id) queryParams.set('user_id', currentUser.id);
-      if (currentUser?.username) queryParams.set('username', currentUser.username);
+      if (curUser?.id) queryParams.set('user_id', curUser.id);
+      if (curUser?.username) queryParams.set('username', curUser.username);
       if (joinParam) queryParams.set('join', joinParam);
       const qStr = queryParams.toString() ? `?${queryParams.toString()}` : '';
       const apiUrl = getCommunityApiUrl(`/api/community/sync${qStr}`);
@@ -692,6 +717,12 @@ export default function CommunityPage({ onSelectPage }) {
             const uploadingMsgs = prev.filter(m => m.is_uploading);
             const incomingIds = new Set(data.messages.map(m => m.id));
             const merged = [...data.messages, ...uploadingMsgs.filter(m => !incomingIds.has(m.id))];
+            merged.sort((a, b) => {
+              const tA = parseMsgTime(a);
+              const tB = parseMsgTime(b);
+              if (tA && tB && tA !== tB) return tA - tB;
+              return String(a.id).localeCompare(String(b.id));
+            });
             if (prev.length !== merged.length) return merged;
             const prevHash = prev.map(m => `${m.id}_${JSON.stringify(m.reactions || {})}_${m.content}_${m.is_deleted}_${m.is_uploading}`).join('|');
             const newHash = merged.map(m => `${m.id}_${JSON.stringify(m.reactions || {})}_${m.content}_${m.is_deleted}_${m.is_uploading}`).join('|');
@@ -1406,6 +1437,7 @@ export default function CommunityPage({ onSelectPage }) {
         user_name: replyTarget.user_name || replyTarget.sender,
         content: (replyTarget.content || replyTarget.text || '').slice(0, 100)
       } : null,
+      created_timestamp: Date.now(),
       created_at: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       is_uploading: hasUploadingFiles
     };
@@ -1555,6 +1587,7 @@ export default function CommunityPage({ onSelectPage }) {
         user_name: replyTarget.user_name || replyTarget.sender,
         content: (replyTarget.content || replyTarget.text || '').slice(0, 100)
       } : null,
+      created_timestamp: Date.now(),
       created_at: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     };
 
@@ -2155,10 +2188,15 @@ export default function CommunityPage({ onSelectPage }) {
     } catch {}
   };
 
-  // Filter messages for current active room
+  // Filter messages for current active room and ensure strict chronological order
   const activeMessages = messages.filter(m => {
     if (activeChatRoom === 'public') return m.channel_id === 'public';
     return m.channel_id === activeChatRoom;
+  }).sort((a, b) => {
+    const tA = parseMsgTime(a);
+    const tB = parseMsgTime(b);
+    if (tA && tB && tA !== tB) return tA - tB;
+    return String(a.id).localeCompare(String(b.id));
   });
 
   // User's unread notifications count:

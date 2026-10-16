@@ -124,6 +124,30 @@ export default function NationalistPage({ onOpenSuggest, onNavigatePropagandus, 
     return () => clearTimeout(handler);
   }, [search, selectedCategory, reloadTrigger]);
 
+  // Real-time silent background polling (every 5 seconds)
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const params = new URLSearchParams();
+      if (search && search.trim()) params.append('search', search.trim());
+      if (selectedCategory !== 'All') params.append('category', selectedCategory);
+
+      fetch(`/api/nationalist-influencers?${params.toString()}`)
+        .then(r => r.json())
+        .then(data => {
+          if (Array.isArray(data)) {
+            setInfluencers(prev => {
+              const prevStr = JSON.stringify(prev.map(n => `${n.id}_${n.upvotes}_${n.status}`));
+              const newStr = JSON.stringify(data.map(n => `${n.id}_${n.upvotes}_${n.status}`));
+              return prevStr !== newStr ? data : prev;
+            });
+          }
+        })
+        .catch(() => {});
+    }, 5000);
+
+    return () => clearInterval(timer);
+  }, [search, selectedCategory]);
+
   const fetchNationalists = async (searchQuery = search) => {
     try {
       setLoading(true);

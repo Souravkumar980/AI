@@ -103,8 +103,8 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
 
   const [directPropForm, setDirectPropForm] = useState({
     name: '',
-    handle_x: '',
     handle_yt: '',
+    handle_x: '',
     handle_insta: '',
     avatar_url: '',
     categories: ['Social Media'],
@@ -113,10 +113,16 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
     narrative: '',
     fact_check: '',
     proof_url: '',
+    evidenceLinks: [''],
+    other_links: [],
+    rating_avg: 5.0,
+    rating_count: 1,
     upvotes: 0,
     is_verified: 1
   });
 
+  const [diskBackupInfo, setDiskBackupInfo] = useState(null);
+  const [diskBackupLoading, setDiskBackupLoading] = useState(false);
   const [isFetchingAvatar, setIsFetchingAvatar] = useState(false);
 
   // Dynamic Categories Management State
@@ -1529,6 +1535,14 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
       if (!payload.avatar_url) {
         payload.avatar_url = deriveAvatarFromHandles(payload.name, payload.handle_yt, payload.handle_x, payload.handle_insta);
       }
+      const cleanLinks = (payload.evidenceLinks || []).map(l => (typeof l === 'string' ? l.trim() : (l.url || '').trim())).filter(Boolean);
+      payload.other_links = cleanLinks;
+      if (cleanLinks.length > 0 && !payload.proof_url) {
+        payload.proof_url = cleanLinks[0];
+      }
+      payload.rating_avg = parseFloat(payload.rating_avg) || 0;
+      payload.rating_count = parseInt(payload.rating_count, 10) || 0;
+
       const res = await fetch(`/api/admin/entities/${editingEntity.id}`, {
         method: 'PUT',
         headers: {
@@ -1555,6 +1569,14 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
       if (!payload.avatar_url) {
         payload.avatar_url = deriveAvatarFromHandles(payload.name, payload.handle_yt, payload.handle_x, payload.handle_insta);
       }
+      const cleanLinks = (payload.evidenceLinks || []).map(l => (typeof l === 'string' ? l.trim() : (l.url || '').trim())).filter(Boolean);
+      payload.other_links = cleanLinks;
+      if (cleanLinks.length > 0 && !payload.proof_url) {
+        payload.proof_url = cleanLinks[0];
+      }
+      payload.rating_avg = parseFloat(payload.rating_avg) || 5.0;
+      payload.rating_count = parseInt(payload.rating_count, 10) || 1;
+
       const res = await fetch('/api/admin/entities', {
         method: 'POST',
         headers: {
@@ -1568,8 +1590,8 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
         setIsDirectAddPropOpen(false);
         setDirectPropForm({
           name: '',
-          handle_x: '',
           handle_yt: '',
+          handle_x: '',
           handle_insta: '',
           avatar_url: '',
           categories: ['Social Media'],
@@ -1578,6 +1600,10 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
           narrative: '',
           fact_check: '',
           proof_url: '',
+          evidenceLinks: [''],
+          other_links: [],
+          rating_avg: 5.0,
+          rating_count: 1,
           upvotes: 0,
           is_verified: 1
         });
@@ -1847,6 +1873,73 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
       }
     };
     reader.readAsText(file);
+  };
+
+  const fetchDiskBackupStatus = async () => {
+    try {
+      const res = await fetch('/api/admin/backup/disk-status', {
+        headers: { 'x-admin-key': adminToken }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setDiskBackupInfo(data);
+      }
+    } catch (e) {}
+  };
+
+  const handleSaveDiskBackup = async () => {
+    try {
+      setDiskBackupLoading(true);
+      showToast('Saving server disk snapshot to htdocs/backups...');
+      const res = await fetch('/api/admin/backup/disk-save', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-key': adminToken
+        }
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showToast(data.message || 'Snapshot successfully saved to disk!');
+        fetchDiskBackupStatus();
+      } else {
+        alert(data.error || 'Failed to save snapshot to server disk');
+      }
+    } catch (e) {
+      alert('Error saving snapshot: ' + e.message);
+    } finally {
+      setDiskBackupLoading(false);
+    }
+  };
+
+  const handleRestoreDiskBackup = async () => {
+    if (!window.confirm('WARNING: Are you sure you want to restore all site data from htdocs/backups/auto_backup_latest.json? This will restore all entities, categories, and channels into your database.')) {
+      return;
+    }
+    try {
+      setDiskBackupLoading(true);
+      showToast('Restoring database from server disk snapshot...');
+      const res = await fetch('/api/admin/backup/disk-restore', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-key': adminToken
+        }
+      });
+      const data = await res.json();
+      if (res.ok) {
+        alert(data.message || 'Data restored successfully from server disk!');
+        loadAllAdminData();
+        fetchDiskBackupStatus();
+        if (onRefreshData) onRefreshData();
+      } else {
+        alert(data.error || 'Failed to restore from server disk backup');
+      }
+    } catch (e) {
+      alert('Error restoring from disk: ' + e.message);
+    } finally {
+      setDiskBackupLoading(false);
+    }
   };
 
   if (!isOpen) return null;
@@ -2896,7 +2989,7 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
                             <th className="p-3">Name</th>
                             <th className="p-3">Social Handles</th>
                             <th className="p-3">Party / Inst</th>
-                            <th className="p-3">Votes</th>
+                            <th className="p-3">Wanted Rating / Users</th>
                             <th className="p-3">Status</th>
                             <th className="p-3 text-right">Actions</th>
                           </tr>
@@ -2932,9 +3025,14 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
                                 {ent.institution && <div className="text-amber-700 font-medium">{ent.institution}</div>}
                               </td>
                               <td className="p-3 font-mono font-bold">
-                                <span className="bg-orange-100 text-orange-900 border border-orange-300 px-2 py-0.5 rounded-full text-[11px]">
-                                  ▲ {ent.upvotes || 0}
-                                </span>
+                                <div className="flex flex-col gap-1 items-start">
+                                  <span className="bg-amber-100 text-amber-900 border border-amber-300 px-2 py-0.5 rounded-full text-[11px] flex items-center gap-1 font-black">
+                                    ⭐ {(ent.rating_avg !== undefined && ent.rating_avg !== null ? Number(ent.rating_avg).toFixed(1) : '5.0')} / 5
+                                  </span>
+                                  <span className="text-[10px] text-gray-500 font-sans">
+                                    👥 {ent.rating_count || 0} users
+                                  </span>
+                                </div>
                               </td>
                               <td className="p-3">
                                 <button
@@ -2950,9 +3048,25 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
                               </td>
                               <td className="p-3 text-right space-x-1.5 whitespace-nowrap">
                                 <button
-                                  onClick={() => setEditingEntity({ ...ent })}
+                                  onClick={() => {
+                                    let evLinks = [''];
+                                    if (ent.other_links) {
+                                      try {
+                                        const parsed = Array.isArray(ent.other_links) ? ent.other_links : JSON.parse(ent.other_links);
+                                        if (Array.isArray(parsed) && parsed.length > 0) evLinks = parsed;
+                                      } catch {}
+                                    } else if (ent.proof_url) {
+                                      evLinks = [ent.proof_url];
+                                    }
+                                    setEditingEntity({
+                                      ...ent,
+                                      evidenceLinks: evLinks,
+                                      rating_avg: ent.rating_avg !== undefined ? Number(ent.rating_avg) : 5.0,
+                                      rating_count: ent.rating_count !== undefined ? Number(ent.rating_count) : 0
+                                    });
+                                  }}
                                   className="p-1.5 bg-yellow-100 hover:bg-yellow-200 border border-black rounded"
-                                  title="Edit Entity & Votes"
+                                  title="Edit Entity, Ratings & Sources"
                                 >
                                   <Edit className="w-3.5 h-3.5 text-black" />
                                 </button>
@@ -3482,6 +3596,80 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
                           className="hidden"
                         />
                       </label>
+                    </div>
+                  </div>
+
+                  {/* Card 3: Webhost Server Disk Backup & Restore */}
+                  <div className="p-5 border-3 border-black rounded-2xl bg-white shadow-pop space-y-3">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <div>
+                        <h4 className="font-display font-black text-sm uppercase text-black flex items-center gap-2">
+                          <span>💾</span>
+                          <span>3. Webhost Server Disk Snapshot (htdocs/backups)</span>
+                        </h4>
+                        <p className="text-[11px] text-gray-600 font-display mt-0.5">
+                          Stores complete snapshot directly on your web hosting disk at <code className="bg-gray-100 px-1 py-0.5 rounded font-mono font-bold">htdocs/backups/auto_backup_latest.json</code>. If MySQL database is ever wiped or removed, you can restore all site data instantly from this disk file!
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={fetchDiskBackupStatus}
+                        className="px-2.5 py-1 text-[10px] font-black uppercase rounded border border-black bg-gray-100 hover:bg-gray-200"
+                      >
+                        🔄 Check Disk Status
+                      </button>
+                    </div>
+
+                    {diskBackupInfo && (
+                      <div className="p-3 bg-amber-50/60 border border-amber-200 rounded-xl text-xs font-mono space-y-1">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-gray-700">File Exists on Disk:</span>
+                          <span className={diskBackupInfo.exists ? 'text-green-700 font-bold' : 'text-red-600 font-bold'}>
+                            {diskBackupInfo.exists ? '✓ YES (Saved)' : '✗ Not Created Yet'}
+                          </span>
+                        </div>
+                        {diskBackupInfo.exists && (
+                          <>
+                            <div className="flex items-center justify-between">
+                              <span className="font-bold text-gray-700">File Size:</span>
+                              <span className="text-black">{diskBackupInfo.file_size_formatted}</span>
+                            </div>
+                            <div className="flex items-center justify-between">
+                              <span className="font-bold text-gray-700">Last Modified:</span>
+                              <span className="text-black">{diskBackupInfo.last_modified ? new Date(diskBackupInfo.last_modified).toLocaleString() : 'N/A'}</span>
+                            </div>
+                            {diskBackupInfo.summary && (
+                              <div className="text-[10px] text-gray-600 pt-1 border-t border-amber-200/60 flex flex-wrap gap-2">
+                                <span>Propagandus: <b>{diskBackupInfo.summary.entities}</b></span>
+                                <span>Nationalists: <b>{diskBackupInfo.summary.nationalist_influencers}</b></span>
+                                <span>Ratings: <b>{diskBackupInfo.summary.propagandu_ratings}</b></span>
+                                <span>Categories: <b>{diskBackupInfo.summary.site_categories}</b></span>
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="flex items-center gap-3 flex-wrap pt-1">
+                      <button
+                        type="button"
+                        onClick={handleSaveDiskBackup}
+                        disabled={diskBackupLoading}
+                        className="flex-1 pop-btn bg-saffron hover:bg-yellow-400 text-black px-4 py-2.5 rounded-xl text-xs font-black uppercase flex items-center gap-2 justify-center"
+                      >
+                        <span>💾</span>
+                        <span>{diskBackupLoading ? 'Saving...' : 'Save Site Snapshot to Server Disk Now'}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleRestoreDiskBackup}
+                        disabled={diskBackupLoading}
+                        className="flex-1 pop-btn bg-tirangaGreen hover:bg-green-700 text-white px-4 py-2.5 rounded-xl text-xs font-black uppercase flex items-center gap-2 justify-center"
+                      >
+                        <span>⚡</span>
+                        <span>{diskBackupLoading ? 'Restoring...' : 'Restore All Site Data from Server Disk'}</span>
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -5353,17 +5541,81 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
                   </div>
                 </div>
 
-                <div>
-                  <label className="block font-black uppercase text-gray-700 mb-1">
-                    Public Upvotes (Votes Count)
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={editingEntity.upvotes !== undefined ? editingEntity.upvotes : 0}
-                    onChange={(e) => setEditingEntity({ ...editingEntity, upvotes: parseInt(e.target.value, 10) || 0 })}
-                    className="w-full px-3 py-2 bg-gray-50 border border-black rounded font-mono font-bold text-sm"
-                  />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block font-black uppercase text-gray-700 mb-1 text-xs">
+                      ⭐ Wanted Level Rating (0.0 - 5.0)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      max="5"
+                      value={editingEntity.rating_avg !== undefined ? editingEntity.rating_avg : 5.0}
+                      onChange={(e) => setEditingEntity({ ...editingEntity, rating_avg: parseFloat(e.target.value) || 0 })}
+                      className="w-full px-3 py-2 bg-gray-50 border border-black rounded font-mono font-bold text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-black uppercase text-gray-700 mb-1 text-xs">
+                      👥 Total Rating Users (Count)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={editingEntity.rating_count !== undefined ? editingEntity.rating_count : 0}
+                      onChange={(e) => setEditingEntity({ ...editingEntity, rating_count: parseInt(e.target.value, 10) || 0 })}
+                      className="w-full px-3 py-2 bg-gray-50 border border-black rounded font-mono font-bold text-sm"
+                    />
+                  </div>
+                </div>
+
+                {/* Multi-Source Evidence Links */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-black uppercase text-gray-700">
+                      Multi-Source Evidence Links (Proof / Sources)
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setEditingEntity({
+                        ...editingEntity,
+                        evidenceLinks: [...(editingEntity.evidenceLinks || ['']), '']
+                      })}
+                      className="text-[10px] font-black uppercase px-2 py-0.5 bg-yellow-300 hover:bg-yellow-400 text-black rounded border border-black shadow-[1px_1px_0px_#000]"
+                    >
+                      + Add Evidence Link
+                    </button>
+                  </div>
+                  {(editingEntity.evidenceLinks || ['']).map((link, idx) => (
+                    <div key={idx} className="flex items-center gap-1.5">
+                      <input
+                        type="url"
+                        placeholder={`https://evidence-${idx + 1}.com/...`}
+                        value={typeof link === 'string' ? link : (link.url || '')}
+                        onChange={(e) => {
+                          const next = [...(editingEntity.evidenceLinks || [''])];
+                          next[idx] = e.target.value;
+                          setEditingEntity({ ...editingEntity, evidenceLinks: next });
+                        }}
+                        className="flex-1 px-3 py-1.5 bg-gray-50 border border-black rounded font-mono text-xs"
+                      />
+                      {(editingEntity.evidenceLinks || ['']).length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => setEditingEntity({
+                            ...editingEntity,
+                            evidenceLinks: editingEntity.evidenceLinks.filter((_, i) => i !== idx)
+                          })}
+                          className="p-1.5 rounded border border-black bg-red-100 hover:bg-red-200 text-red-700 font-bold text-xs"
+                          title="Remove Link"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                  ))}
                 </div>
 
                 <div>
@@ -5770,10 +6022,10 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
 
               <form onSubmit={handleDirectAddPropagandusSubmit} className="space-y-3 text-xs font-display">
                 <div>
-                  <label className="block font-black uppercase text-gray-700 mb-1">Name / Outlet *</label>
+                  <label className="block font-black uppercase text-gray-700 mb-1">Creator / Outlet / Name *</label>
                   <input
                     type="text"
-                    placeholder="e.g. Rahul Worker, Outlet..."
+                    placeholder="e.g. Ravish Kumar, Dhruv Rathee..."
                     value={directPropForm.name}
                     onChange={(e) => setDirectPropForm({ ...directPropForm, name: e.target.value })}
                     className="w-full px-3 py-2 bg-gray-50 border border-black rounded font-bold"
@@ -5783,22 +6035,22 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
 
                 <div className="grid grid-cols-3 gap-2">
                   <div>
-                    <label className="block font-bold text-gray-600 mb-1">X Handle</label>
-                    <input
-                      type="text"
-                      placeholder="@username"
-                      value={directPropForm.handle_x}
-                      onChange={(e) => setDirectPropForm({ ...directPropForm, handle_x: e.target.value })}
-                      className="w-full px-2 py-1.5 bg-gray-50 border border-black rounded font-mono"
-                    />
-                  </div>
-                  <div>
                     <label className="block font-bold text-gray-600 mb-1">YT Handle</label>
                     <input
                       type="text"
                       placeholder="@channel"
                       value={directPropForm.handle_yt}
                       onChange={(e) => setDirectPropForm({ ...directPropForm, handle_yt: e.target.value })}
+                      className="w-full px-2 py-1.5 bg-gray-50 border border-black rounded font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-bold text-gray-600 mb-1">X Handle</label>
+                    <input
+                      type="text"
+                      placeholder="@username"
+                      value={directPropForm.handle_x}
+                      onChange={(e) => setDirectPropForm({ ...directPropForm, handle_x: e.target.value })}
                       className="w-full px-2 py-1.5 bg-gray-50 border border-black rounded font-mono"
                     />
                   </div>
@@ -5846,36 +6098,119 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
                   </div>
                 </div>
 
+                <div>
+                  <label className="block font-black uppercase text-gray-700 mb-1">
+                    Categories (Multi-Select: 1 or more) *
+                  </label>
+                  <div className="flex flex-wrap gap-1.5 p-2 bg-gray-50 border border-black rounded-lg max-h-36 overflow-y-auto">
+                    {allPropCategoryOptions.map(cat => {
+                      const isSelected = (directPropForm.categories || []).includes(cat);
+                      return (
+                        <button
+                          key={cat}
+                          type="button"
+                          onClick={() => {
+                            const cur = directPropForm.categories || [];
+                            const next = isSelected ? cur.filter(c => c !== cat) : [...cur, cat];
+                            setDirectPropForm({
+                              ...directPropForm,
+                              categories: next.length > 0 ? next : ['Social Media']
+                            });
+                          }}
+                          className={`px-2.5 py-1 rounded-md text-xs font-bold border transition-all ${
+                            isSelected
+                              ? 'bg-popRed text-white border-black shadow-[1px_1px_0px_#000]'
+                              : 'bg-white text-gray-800 border-gray-300 hover:border-black'
+                          }`}
+                        >
+                          {isSelected ? '✓ ' : '+ '}{cat}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="text-[10px] text-gray-500 font-bold mt-1">
+                    Selected: {(directPropForm.categories || []).join(', ') || 'Social Media'}
+                  </p>
+                </div>
+
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block font-black uppercase text-gray-700 mb-1">Party</label>
-                    <select
-                      value={directPropForm.party}
-                      onChange={(e) => setDirectPropForm({ ...directPropForm, party: e.target.value })}
-                      className="w-full px-3 py-2 bg-gray-50 border border-black rounded"
-                    >
-                      {OPPOSITION_PARTIES.map((p, idx) => (
-                        <option key={idx} value={p}>{p}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block font-black uppercase text-gray-700 mb-1">Initial Upvotes</label>
+                    <label className="block font-black uppercase text-gray-700 mb-1 text-xs">⭐ Initial Wanted Rating (0.0 - 5.0)</label>
                     <input
                       type="number"
+                      step="0.1"
                       min="0"
-                      value={directPropForm.upvotes}
-                      onChange={(e) => setDirectPropForm({ ...directPropForm, upvotes: parseInt(e.target.value, 10) || 0 })}
+                      max="5"
+                      value={directPropForm.rating_avg}
+                      onChange={(e) => setDirectPropForm({ ...directPropForm, rating_avg: parseFloat(e.target.value) || 0 })}
                       className="w-full px-3 py-2 bg-gray-50 border border-black rounded font-mono font-bold"
                     />
                   </div>
+                  <div>
+                    <label className="block font-black uppercase text-gray-700 mb-1 text-xs">👥 Initial Total Users</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={directPropForm.rating_count}
+                      onChange={(e) => setDirectPropForm({ ...directPropForm, rating_count: parseInt(e.target.value, 10) || 0 })}
+                      className="w-full px-3 py-2 bg-gray-50 border border-black rounded font-mono font-bold"
+                    />
+                  </div>
+                </div>
+
+                {/* Multi-Source Evidence Links */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-black uppercase text-gray-700">
+                      Multi-Source Evidence Links (Proof / Sources)
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setDirectPropForm({
+                        ...directPropForm,
+                        evidenceLinks: [...(directPropForm.evidenceLinks || ['']), '']
+                      })}
+                      className="text-[10px] font-black uppercase px-2 py-0.5 bg-yellow-300 hover:bg-yellow-400 text-black rounded border border-black shadow-[1px_1px_0px_#000]"
+                    >
+                      + Add Evidence Link
+                    </button>
+                  </div>
+                  {(directPropForm.evidenceLinks || ['']).map((link, idx) => (
+                    <div key={idx} className="flex items-center gap-1.5">
+                      <input
+                        type="url"
+                        placeholder={`https://evidence-${idx + 1}.com/...`}
+                        value={link}
+                        onChange={(e) => {
+                          const next = [...(directPropForm.evidenceLinks || [''])];
+                          next[idx] = e.target.value;
+                          setDirectPropForm({ ...directPropForm, evidenceLinks: next });
+                        }}
+                        className="flex-1 px-3 py-1.5 bg-gray-50 border border-black rounded font-mono text-xs"
+                      />
+                      {(directPropForm.evidenceLinks || ['']).length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => setDirectPropForm({
+                            ...directPropForm,
+                            evidenceLinks: directPropForm.evidenceLinks.filter((_, i) => i !== idx)
+                          })}
+                          className="p-1.5 rounded border border-black bg-red-100 hover:bg-red-200 text-red-700 font-bold text-xs"
+                          title="Remove Link"
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                  ))}
                 </div>
 
                 <div>
                   <label className="block font-black uppercase text-gray-700 mb-1">Documented Narrative *</label>
                   <textarea
                     rows="3"
-                    placeholder="Document their anti-India claims..."
+                    placeholder="Document their anti-India claims and false propaganda..."
                     value={directPropForm.narrative}
                     onChange={(e) => setDirectPropForm({ ...directPropForm, narrative: e.target.value })}
                     className="w-full p-2 bg-gray-50 border border-black rounded"
@@ -5888,7 +6223,7 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
                     type="submit"
                     className="flex-1 pop-btn bg-popRed text-white py-2 rounded-lg font-black uppercase"
                   >
-                    Add Propagandu Profile
+                    Add Propagandu Profile & Make Live
                   </button>
                   <button
                     type="button"

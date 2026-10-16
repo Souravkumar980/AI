@@ -34,6 +34,7 @@ export default function SubmitModal({ isOpen, onClose, onSuccess }) {
   const [institution, setInstitution] = useState(OPPOSITION_INSTITUTIONS[0]);
   const [narrative, setNarrative] = useState('');
   const [proofUrl, setProofUrl] = useState('');
+  const [evidenceLinks, setEvidenceLinks] = useState(['']);
   const [honeypot, setHoneypot] = useState('');
   const [error, setError] = useState('');
   const [fetchingSocial, setFetchingSocial] = useState(false);
@@ -48,7 +49,7 @@ export default function SubmitModal({ isOpen, onClose, onSuccess }) {
         if (Array.isArray(data) && data.length > 0) {
           const defaultIds = new Set(ENTITY_CATEGORIES.map(c => c.id));
           const dynamic = data
-            .filter(d => (d.type === 'entity' || !d.type) && d.name && !defaultIds.has(d.name))
+            .filter(d => (d.type === 'propagandist' || d.type === 'propagandu' || d.type === 'entity' || !d.type) && d.name && !defaultIds.has(d.name))
             .map(d => ({ id: d.name, label: d.name, icon: 'Share2' }));
           setAvailableCategories([...ENTITY_CATEGORIES, ...dynamic]);
         }
@@ -381,7 +382,8 @@ export default function SubmitModal({ isOpen, onClose, onSuccess }) {
         party: selectedCategories.includes('Political Party') ? party : null,
         institution: selectedCategories.includes('Institutions') ? institution : null,
         narrative: narrative.trim(),
-        proof_url: proofUrl.trim(),
+        proof_url: (evidenceLinks.find(l => l && l.trim()) || proofUrl).trim(),
+        other_links: evidenceLinks.map(l => l.trim()).filter(Boolean),
         _hp_security_check: honeypot
       };
 
@@ -761,18 +763,45 @@ export default function SubmitModal({ isOpen, onClose, onSuccess }) {
             ></textarea>
           </div>
 
-          {/* Evidence Link */}
-          <div>
-            <label className="block text-xs font-black uppercase text-gray-800 mb-1">
-              Evidence / Source Link (Optional)
-            </label>
-            <input
-              type="url"
-              placeholder="https://..."
-              value={proofUrl}
-              onChange={(e) => setProofUrl(e.target.value)}
-              className="w-full px-3 py-2 bg-white border border-gray-300 rounded-xl text-xs font-medium focus:outline-none"
-            />
+          {/* Multi-Source Evidence Links */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <label className="block text-xs font-black uppercase text-gray-800">
+                Multi-Source Evidence Links (Proof / Sources)
+              </label>
+              <button
+                type="button"
+                onClick={() => setEvidenceLinks([...evidenceLinks, ''])}
+                className="text-[10px] font-black uppercase px-2 py-0.5 bg-yellow-300 hover:bg-yellow-400 text-black rounded border border-black shadow-[1px_1px_0px_#000] active:scale-95 transition-all"
+              >
+                + Add Evidence Link
+              </button>
+            </div>
+            {evidenceLinks.map((link, idx) => (
+              <div key={idx} className="flex items-center gap-1.5">
+                <input
+                  type="url"
+                  placeholder={`https://evidence-source-${idx + 1}.com/...`}
+                  value={link}
+                  onChange={(e) => {
+                    const next = [...evidenceLinks];
+                    next[idx] = e.target.value;
+                    setEvidenceLinks(next);
+                  }}
+                  className="flex-1 px-3 py-1.5 bg-white border border-gray-300 rounded-xl text-xs font-mono focus:outline-none"
+                />
+                {evidenceLinks.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => setEvidenceLinks(evidenceLinks.filter((_, i) => i !== idx))}
+                    className="p-1.5 rounded-lg border border-black bg-red-100 hover:bg-red-200 text-red-700 font-bold text-xs"
+                    title="Remove Link"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+            ))}
           </div>
 
           {/* Submit Button */}
