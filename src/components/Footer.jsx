@@ -87,6 +87,17 @@ export default function Footer({ onOpenSubmit, onOpenSuggest, onSelectPage, onOp
                   </button>
                 </li>
               )}
+              <li>
+                <button
+                  onClick={() => {
+                    if (onSelectPage) onSelectPage('suggest-feature');
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }}
+                  className="hover:text-saffron transition-colors text-left text-yellow-300 font-bold flex items-center gap-1.5"
+                >
+                  <span>💡 Suggest Updates &amp; Features</span>
+                </button>
+              </li>
               {onOpenDonate && (
                 <li>
                   <button

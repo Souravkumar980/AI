@@ -5,14 +5,7 @@
 // Plays full sound duration, but immediately stops if user taps anywhere on screen
 
 const PROPAGANDU_SOUNDS = [
-  '/sounds/sound_1.m4a',
-  '/sounds/sound_1.mp3',
-  '/sounds/sound_2.mp3',
-  '/sounds/sound_3.mp3',
-  '/sounds/sound_4.mp3',
   '/sounds/sound_5.mp3',
-  '/sounds/sound_6.mp3',
-  '/sounds/sound_7.mp3',
   '/sounds/sound_8.mp3'
 ];
 
@@ -73,6 +66,7 @@ export function playSoundWithDismiss(soundUrl) {
 }
 
 let activePropaganduAudio = null;
+let lastPropaganduSoundIndex = -1;
 
 export function playRandomPropaganduSound() {
   try {
@@ -80,9 +74,19 @@ export function playRandomPropaganduSound() {
       activePropaganduAudio.pause();
       activePropaganduAudio.currentTime = 0;
     }
-    const randomIndex = Math.floor(Math.random() * PROPAGANDU_SOUNDS.length);
-    const audio = new Audio(PROPAGANDU_SOUNDS[randomIndex]);
-    audio.volume = 0.9;
+    // Alternate or pick between sound_5.mp3 and sound_8.mp3
+    let nextIndex;
+    if (lastPropaganduSoundIndex === 0) {
+      nextIndex = 1;
+    } else if (lastPropaganduSoundIndex === 1) {
+      nextIndex = 0;
+    } else {
+      nextIndex = Math.random() < 0.5 ? 0 : 1;
+    }
+    lastPropaganduSoundIndex = nextIndex;
+
+    const audio = new Audio(PROPAGANDU_SOUNDS[nextIndex]);
+    audio.volume = 0.95;
     activePropaganduAudio = audio;
     audio.play().catch((err) => {
       console.warn('Audio playback prevented or unsupported:', err);

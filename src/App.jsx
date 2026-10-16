@@ -15,7 +15,7 @@ import BulletinBanner from './components/BulletinBanner';
 import CommunityPage from './components/CommunityPage';
 import DonateModal from './components/DonateModal';
 import Footer from './components/Footer';
-import SuggestFeatureSection from './components/SuggestFeatureSection';
+import SuggestFeaturePage from './components/SuggestFeaturePage';
 import { DevToolsShield, GeoRestrictionShield, AuthenticBrowserShield } from './components/SecurityShields';
 import { MusicPlayerProvider } from './components/MusicPlayer';
 import confetti from 'canvas-confetti';
@@ -185,6 +185,8 @@ export default function App() {
         ? 'Nationalist Creators Page' 
         : currentPage === 'community'
         ? 'Sovereign Community Hub'
+        : currentPage === 'suggest-feature'
+        ? 'Suggest Updates & Features Page'
         : 'Homepage / Propagandus Directory';
       await fetch('/api/track-visit', {
         method: 'POST',
@@ -207,17 +209,18 @@ export default function App() {
     return () => clearInterval(timer);
   }, [currentPage]);
 
-  // Tap sound handler: ONLY on tap/click (not hover) on Propagandu page, and NOT when searching
+  // Tap sound handler: ONLY on tap/click on Propagandu profiles
   const handlePropaganduPageClick = (e) => {
     if (currentPage !== 'propagandus') return;
 
-    // Never play sound if user clicked inside searching area or form inputs
+    // Never play sound if user clicked inside searching area or form inputs or links
     if (
       e.target.closest('#search-area') ||
       e.target.closest('[data-no-sound="true"]') ||
       e.target.closest('input') ||
       e.target.closest('textarea') ||
-      e.target.closest('select')
+      e.target.closest('select') ||
+      e.target.closest('a')
     ) {
       return;
     }
@@ -230,9 +233,9 @@ export default function App() {
       return;
     }
 
-    // Play random sound when user taps any div, card, article, or section
-    const isTargetDiv = e.target.closest('div, section, article, .bento-card, .soft-card');
-    if (isTargetDiv) {
+    // Play only when user taps on a propagandu profile card
+    const isPropaganduCard = e.target.closest('[data-propagandu-card="true"]');
+    if (isPropaganduCard) {
       playRandomPropaganduSound();
     }
   };
@@ -275,6 +278,11 @@ export default function App() {
           <CommunityPage
             onSelectPage={handleSelectPage}
           />
+        ) : currentPage === 'suggest-feature' ? (
+          /* Dedicated Suggest Updates & Features Full Page */
+          <SuggestFeaturePage
+            onNavigateHome={() => handleSelectPage('propagandus')}
+          />
         ) : (
           /* Dedicated Exposed Propagandus Homepage with Tap Sound (Excluded on Search) */
           <div onClick={handlePropaganduPageClick} className="flex-1">
@@ -303,9 +311,6 @@ export default function App() {
               onOpenShareCard={handleOpenShareCard}
               reloadTrigger={reloadTrigger}
             />
-
-            {/* Suggest Updates / Feature to Admin Section */}
-            <SuggestFeatureSection />
           </div>
         )}
       </main>

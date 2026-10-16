@@ -370,7 +370,14 @@ export default function PropagandusDatabase({ onOpenSubmit, onOpenReport, onOpen
               return (
                 <div
                   key={item.id}
-                  className="bento-card p-4 bg-white border-2 border-black shadow-[4px_4px_0px_#000] flex flex-col items-center justify-between text-center hover:-translate-y-1 hover:shadow-[6px_6px_0px_#000] transition-all"
+                  data-propagandu-card="true"
+                  onClick={(e) => {
+                    if (!e.target.closest('a, button')) {
+                      e.stopPropagation();
+                      playRandomPropaganduSound();
+                    }
+                  }}
+                  className="bento-card p-4 bg-white border-2 border-black shadow-[4px_4px_0px_#000] flex flex-col items-center justify-between text-center hover:-translate-y-1 hover:shadow-[6px_6px_0px_#000] transition-all cursor-pointer"
                 >
                   <div className="flex flex-col items-center w-full">
                     <img
@@ -457,7 +464,13 @@ export default function PropagandusDatabase({ onOpenSubmit, onOpenReport, onOpen
               return (
                 <div
                   key={item.id}
-                  onClick={() => playRandomPropaganduSound()}
+                  data-propagandu-card="true"
+                  onClick={(e) => {
+                    if (!e.target.closest('a, button, input')) {
+                      e.stopPropagation();
+                      playRandomPropaganduSound();
+                    }
+                  }}
                   className="bento-card overflow-hidden flex flex-col justify-between bg-white cursor-pointer hover:shadow-[6px_6px_0px_#000] transition-all"
                 >
                   {/* Top Bar: Profile & Report */}
