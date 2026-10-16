@@ -122,7 +122,7 @@ async function generateUploadHtml() {
     (function() {
       var CDN_BASE = '${cdnBase}';
       window.__CDN_BASE__ = CDN_BASE;
-      window.__API_BASE_URL__ = 'https://exposed-api.exposedpropagandu.workers.dev';
+      window.__API_BASE_URL__ = '';
       window.__EP_CLIENT_KEY__ = 'ep-client-v1-bharat-first-2024';
 
       var staticAssets = ['/golden.png', '/blue.png', '/favicon.png', '/flag-of-india.png', '/flag-of-india-330.png', '/donate-qr.jpg'];
@@ -173,12 +173,15 @@ async function generateUploadHtml() {
 
   const distUploadPath = path.join(distDir, 'upload.html');
   const rootUploadPath = path.resolve(__dirname, '../upload.html');
+  const publicUploadPath = path.resolve(__dirname, '../public/upload.html');
 
   fs.writeFileSync(distUploadPath, minifiedHtml, 'utf8');
   fs.writeFileSync(rootUploadPath, minifiedHtml, 'utf8');
+  fs.writeFileSync(publicUploadPath, minifiedHtml, 'utf8');
   console.log(`✅ Generated Standalone upload.html (${minifiedHtml.length} bytes) at:`);
   console.log(`   - ${distUploadPath}`);
   console.log(`   - ${rootUploadPath}`);
+  console.log(`   - ${publicUploadPath}`);
 }
 
 runMinification().then(() => {

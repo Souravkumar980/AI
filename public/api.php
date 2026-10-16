@@ -1260,59 +1260,72 @@ if ($endpoint === 'govt-poll/vote') {
 
     $yesVotes = 0;
     $noVotes = 0;
+    $now = date('c');
 
     if ($pdo) {
         try {
+            // Ensure poll row exists
+            $chkPoll = $pdo->prepare("SELECT * FROM govt_polls WHERE id = ?");
+            $chkPoll->execute([$pollId]);
+            $pollRow = $chkPoll->fetch();
+            if (!$pollRow) {
+                $insPoll = $pdo->prepare("INSERT INTO govt_polls (id, question, yes_votes, no_votes, updated_at) VALUES (?, 'Do you want BJP / NDA back in 2029?', 0, 0, ?)");
+                $insPoll->execute([$pollId, $now]);
+            }
+
+            // Check if this IP has already voted
             $chk = $pdo->prepare("SELECT choice FROM govt_poll_votes WHERE poll_id = ? AND ip = ?");
             $chk->execute([$pollId, $ip]);
             $existing = $chk->fetch();
 
             if ($existing) {
-                $pStmt = $pdo->prepare("SELECT * FROM govt_polls WHERE id = ?");
-                $pStmt->execute([$pollId]);
-                $pRow = $pStmt->fetch();
-                $yesVotes = (int)($pRow['yes_votes'] ?? $yesVotes);
-                $noVotes  = (int)($pRow['no_votes'] ?? $noVotes);
-
-                echo json_encode([
-                    'success' => false,
-                    'alreadyVoted' => true,
-                    'userChoice' => $existing['choice'],
-                    'yesVotes' => $yesVotes,
-                    'noVotes' => $noVotes,
-                    'totalVotes' => $yesVotes + $noVotes,
-                    'yesPercent' => round(($yesVotes / max(1, $yesVotes + $noVotes)) * 100, 1),
-                    'noPercent' => round(($noVotes / max(1, $yesVotes + $noVotes)) * 100, 1)
-                ]);
-                exit;
-            }
-
-            $ins = $pdo->prepare("INSERT INTO govt_poll_votes (poll_id, ip, choice, voted_at) VALUES (?, ?, ?, ?)");
-            $ins->execute([$pollId, $ip, $choice, date('c')]);
-
-            if ($choice === 'yes') {
-                $pdo->prepare("UPDATE govt_polls SET yes_votes = yes_votes + 1, updated_at = ? WHERE id = ?")->execute([date('c'), $pollId]);
+                $oldChoice = strtolower($existing['choice']);
+                if ($oldChoice !== $choice) {
+                    // Switch vote smoothly
+                    if ($oldChoice === 'yes' && $choice === 'no') {
+                        $pdo->prepare("UPDATE govt_polls SET yes_votes = GREATEST(0, yes_votes - 1), no_votes = no_votes + 1, updated_at = ? WHERE id = ?")->execute([$now, $pollId]);
+                    } else if ($oldChoice === 'no' && $choice === 'yes') {
+                        $pdo->prepare("UPDATE govt_polls SET no_votes = GREATEST(0, no_votes - 1), yes_votes = yes_votes + 1, updated_at = ? WHERE id = ?")->execute([$now, $pollId]);
+                    }
+                    // Update record in govt_poll_votes
+                    $upd = $pdo->prepare("UPDATE govt_poll_votes SET choice = ?, voted_at = ? WHERE poll_id = ? AND ip = ?");
+                    $upd->execute([$choice, $now, $pollId, $ip]);
+                }
             } else {
-                $pdo->prepare("UPDATE govt_polls SET no_votes = no_votes + 1, updated_at = ? WHERE id = ?")->execute([date('c'), $pollId]);
+                // First-time vote by this IP
+                $ins = $pdo->prepare("INSERT INTO govt_poll_votes (poll_id, ip, choice, voted_at) VALUES (?, ?, ?, ?)");
+                $ins->execute([$pollId, $ip, $choice, $now]);
+
+                if ($choice === 'yes') {
+                    $pdo->prepare("UPDATE govt_polls SET yes_votes = yes_votes + 1, updated_at = ? WHERE id = ?")->execute([$now, $pollId]);
+                } else {
+                    $pdo->prepare("UPDATE govt_polls SET no_votes = no_votes + 1, updated_at = ? WHERE id = ?")->execute([$now, $pollId]);
+                }
             }
 
+            // Fetch updated tallies
             $pStmt = $pdo->prepare("SELECT * FROM govt_polls WHERE id = ?");
             $pStmt->execute([$pollId]);
             $pRow = $pStmt->fetch();
-            $yesVotes = (int)($pRow['yes_votes'] ?? $yesVotes);
-            $noVotes  = (int)($pRow['no_votes'] ?? $noVotes);
+            $yesVotes = (int)($pRow['yes_votes'] ?? 0);
+            $noVotes  = (int)($pRow['no_votes'] ?? 0);
         } catch (Exception $e) {}
     }
 
     $totalVotes = $yesVotes + $noVotes;
+    $yesPercent = $totalVotes > 0 ? round(($yesVotes / $totalVotes) * 100, 1) : 0;
+    $noPercent  = $totalVotes > 0 ? round(($noVotes / $totalVotes) * 100, 1) : 0;
+
     echo json_encode([
         'success' => true,
+        'id' => $pollId,
+        'userVoted' => $choice,
         'userChoice' => $choice,
         'yesVotes' => $yesVotes,
         'noVotes' => $noVotes,
         'totalVotes' => $totalVotes,
-        'yesPercent' => round(($yesVotes / max(1, $totalVotes)) * 100, 1),
-        'noPercent' => round(($noVotes / max(1, $totalVotes)) * 100, 1)
+        'yesPercent' => $yesPercent,
+        'noPercent' => $noPercent
     ]);
     exit;
 }
@@ -1586,19 +1599,22 @@ if ($endpoint === 'community/sync' && $method === 'GET') {
             $messages[] = $m;
         }
 
+        $joinQuery = trim($_GET['join'] ?? '');
+
         // 3. Channels: sanitize join_token and pending_requests for unauthorized users
         $channelsRaw = $pdo->query("SELECT id, creator_id, creator_name, creator_username, name, description, join_token, is_private, members, pending_requests, created_at FROM community_channels ORDER BY created_at DESC")->fetchAll();
         $channels = [];
         foreach ($channelsRaw as $c) {
             $members = !empty($c['members']) ? json_decode($c['members'], true) : [];
             $pending = !empty($c['pending_requests']) ? json_decode($c['pending_requests'], true) : [];
-            $isCreator = ($c['creator_id'] === $reqUserId);
-            $isMember = in_array($reqUserId, $members);
+            $isCreator = ($reqUserId && $c['creator_id'] === $reqUserId);
+            $isMember = ($reqUserId && in_array($reqUserId, $members));
+            $isInvited = (!empty($joinQuery) && ($c['join_token'] === $joinQuery || $c['id'] === $joinQuery));
 
-            if ($isAdmin || $isCreator || $isMember || empty($c['is_private'])) {
+            if ($isAdmin || $isCreator || $isMember || empty($c['is_private']) || $isInvited) {
                 $c['members'] = ($isAdmin || $isCreator) ? $members : array_map(function($m) use ($reqUserId) { return $m === $reqUserId ? $m : 'member'; }, $members);
                 $c['pending_requests'] = ($isAdmin || $isCreator) ? $pending : [];
-                if (!$isAdmin && !$isCreator && !$isMember) {
+                if (!$isAdmin && !$isCreator && !$isMember && !$isInvited) {
                     unset($c['join_token']);
                 }
                 $channels[] = $c;
@@ -1644,7 +1660,13 @@ if ($endpoint === 'community/sync' && $method === 'GET') {
 
 // 2. Community Register (@gmail.com and @outlook.com only)
 if ($endpoint === 'community/register' && $method === 'POST') {
-    if ($pdo) {
+    if (!$pdo) {
+        http_response_code(500);
+        echo json_encode(['error' => 'Database connection unavailable. Please check database configuration.']);
+        exit;
+    }
+
+    try {
         $chkBlock = $pdo->prepare("SELECT ip FROM blocked_ips WHERE ip = ?");
         $chkBlock->execute([$ip]);
         if ($chkBlock->fetch()) {
@@ -1659,9 +1681,9 @@ if ($endpoint === 'community/register' && $method === 'POST') {
         $password = trim($body['password'] ?? '');
         $avatar_url = trim($body['avatar_url'] ?? '');
 
-        if (!$name || !$email || !$phone || !$password) {
+        if (!$name || !$email || !$password) {
             http_response_code(400);
-            echo json_encode(['error' => 'All fields (name, email, phone, password) are required.']);
+            echo json_encode(['error' => 'Name, email, and password are required.']);
             exit;
         }
 
@@ -1680,18 +1702,29 @@ if ($endpoint === 'community/register' && $method === 'POST') {
             exit;
         }
 
-        // Auto-generate username rahulXXXX
+        // Auto-generate unique username rahulXXXX
         $cleanBase = preg_replace('/[^a-z0-9]/', '', strtolower($name));
         $cleanBase = substr($cleanBase, 0, 8) ?: 'citizen';
         $chars = 'abcdefghijklmnopqrstuvwxyz0123456789._';
-        $randStr = '';
-        for ($i = 0; $i < 4; $i++) {
-            $randStr .= $chars[rand(0, strlen($chars) - 1)];
+        $generatedUsername = '';
+        for ($attempt = 0; $attempt < 10; $attempt++) {
+            $randStr = '';
+            for ($i = 0; $i < 4; $i++) {
+                $randStr .= $chars[rand(0, strlen($chars) - 1)];
+            }
+            $testUsername = $cleanBase . '_' . $randStr;
+            if (isset($comm_protected_regex) && preg_match($comm_protected_regex, $testUsername)) {
+                $testUsername = 'citizen_' . rand(1000, 9999);
+            }
+            $chkU = $pdo->prepare("SELECT id FROM community_users WHERE LOWER(username) = ?");
+            $chkU->execute([strtolower($testUsername)]);
+            if (!$chkU->fetch()) {
+                $generatedUsername = $testUsername;
+                break;
+            }
         }
-        $generatedUsername = $cleanBase . '_' . $randStr;
-
-        if (preg_match($comm_protected_regex, $generatedUsername)) {
-            $generatedUsername = 'citizen_' . rand(1000, 9999);
+        if (!$generatedUsername) {
+            $generatedUsername = $cleanBase . '_' . time();
         }
 
         $userId = 'usr_' . time() . rand(100, 999);
@@ -1720,6 +1753,10 @@ if ($endpoint === 'community/register' && $method === 'POST') {
                 'created_at' => $now
             ]
         ]);
+        exit;
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode(['error' => 'Registration error: ' . $e->getMessage()]);
         exit;
     }
 }
@@ -1892,8 +1929,16 @@ if ($endpoint === 'community/messages' && $method === 'POST') {
             exit;
         }
 
-        $msgId = 'msg_' . time() . '_' . rand(100, 999);
+        $msgId = !empty($body['id']) ? trim($body['id']) : ('msg_' . time() . '_' . rand(100, 999));
         $timeStr = date('h:i A');
+
+        // Deduplicate if already saved
+        $chkExistingMsg = $pdo->prepare("SELECT id FROM community_messages WHERE id = ?");
+        $chkExistingMsg->execute([$msgId]);
+        if ($chkExistingMsg->fetch()) {
+            echo json_encode(['success' => true, 'message' => ['id' => $msgId]]);
+            exit;
+        }
 
         // Handle @mentions
         if (!empty($content)) {
@@ -2425,8 +2470,8 @@ if (strpos($endpoint, 'admin/') === 0) {
         exit;
     }
 
-    // Admin: Nationalist Influencers list
-    if ($endpoint === 'admin/nationalist-influencers') {
+    // Admin: Nationalist Influencers list (GET)
+    if ($endpoint === 'admin/nationalist-influencers' && $method === 'GET') {
         $nats = [];
         if ($pdo) {
             try {
@@ -2434,6 +2479,42 @@ if (strpos($endpoint, 'admin/') === 0) {
             } catch (Exception $e) {}
         }
         echo json_encode($nats);
+        exit;
+    }
+
+    // Admin: Direct Add Nationalist Influencer (POST)
+    if (($endpoint === 'admin/nationalist-influencers' || $endpoint === 'admin/nationalist-influencers/direct') && $method === 'POST') {
+        $name = trim($body['name'] ?? '');
+        $cleanX = extract_handle_php($body['handle_x'] ?? null, 'x');
+        $cleanYt = extract_handle_php($body['handle_yt'] ?? null, 'yt');
+        $cleanInsta = extract_handle_php($body['handle_insta'] ?? null, 'insta');
+
+        $id = !empty($body['id']) ? $body['id'] : ('nat-' . time() . '-' . substr(md5(uniqid()), 0, 6));
+        $now = date('c');
+        $cats = is_array($body['categories'] ?? null) ? json_encode($body['categories']) : json_encode(['Defence']);
+        $cat = $body['category'] ?? (is_array($body['categories'] ?? null) ? implode(', ', $body['categories']) : 'Defence');
+        $desc = trim($body['description'] ?? '');
+        $avatar = trim($body['avatar_url'] ?? '');
+        if (!$avatar) {
+            if ($cleanYt) $avatar = "https://unavatar.io/youtube/@" . $cleanYt;
+            else if ($cleanX) $avatar = "https://unavatar.io/x/" . $cleanX;
+            else if ($cleanInsta) $avatar = "https://ui-avatars.com/api/?name=" . urlencode($name) . "&background=E1306C&color=ffffff&size=512&bold=true&font-size=0.38";
+            else $avatar = "https://api.dicebear.com/7.x/bottts/svg?seed=" . urlencode($name);
+        }
+        $upvotes = (int)($body['upvotes'] ?? 0);
+
+        if ($pdo) {
+            try {
+                $stmt = $pdo->prepare("
+                    INSERT INTO nationalist_influencers (id, name, category, categories, description, avatar_url, handle_x, handle_yt, handle_insta, upvotes, status, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved', ?, ?)
+                ");
+                $stmt->execute([$id, $name, $cat, $cats, $desc, $avatar, $cleanX, $cleanYt, $cleanInsta, $upvotes, $now, $now]);
+            } catch (Exception $e) {}
+        }
+        echo json_encode(['success' => true, 'id' => $id, 'nationalist' => [
+            'id' => $id, 'name' => $name, 'category' => $cat, 'categories' => $cats, 'description' => $desc, 'avatar_url' => $avatar, 'handle_x' => $cleanX, 'handle_yt' => $cleanYt, 'handle_insta' => $cleanInsta, 'upvotes' => $upvotes, 'status' => 'approved'
+        ]]);
         exit;
     }
 
@@ -2454,14 +2535,21 @@ if (strpos($endpoint, 'admin/') === 0) {
                     $status = $body['status'] ?? 'approved';
                     $cat = $body['category'] ?? 'Nationalist Creator';
                     $desc = $body['description'] ?? '';
+                    $avatar = trim($body['avatar_url'] ?? '');
+                    if (!$avatar) {
+                        if ($cleanYt) $avatar = "https://unavatar.io/youtube/@" . $cleanYt;
+                        else if ($cleanX) $avatar = "https://unavatar.io/x/" . $cleanX;
+                        else if ($cleanInsta) $avatar = "https://ui-avatars.com/api/?name=" . urlencode($name) . "&background=E1306C&color=ffffff&size=512&bold=true&font-size=0.38";
+                        else $avatar = "https://api.dicebear.com/7.x/bottts/svg?seed=" . urlencode($name);
+                    }
 
                     $stmt = $pdo->prepare("
                         UPDATE nationalist_influencers SET
                             name = ?, handle_x = ?, handle_yt = ?, handle_insta = ?, other_links = ?,
-                            category = ?, description = ?, status = ?, updated_at = ?
+                            category = ?, description = ?, avatar_url = ?, status = ?, updated_at = ?
                         WHERE id = ?
                     ");
-                    $stmt->execute([$name, $cleanX, $cleanYt, $cleanInsta, $otherLinks, $cat, $desc, $status, date('c'), $natId]);
+                    $stmt->execute([$name, $cleanX, $cleanYt, $cleanInsta, $otherLinks, $cat, $desc, $avatar, $status, date('c'), $natId]);
                 }
             } catch (Exception $e) {}
         }
@@ -2499,7 +2587,13 @@ if (strpos($endpoint, 'admin/') === 0) {
         $id = 'prop-' . time() . '-' . substr(md5(uniqid()), 0, 6);
         $now = date('c');
         $cats = json_encode($body['categories'] ?? ['Social Media']);
-        $avatar = $body['avatar_url'] ?: "https://api.dicebear.com/7.x/bottts/svg?seed=" . urlencode($name);
+        $avatar = trim($body['avatar_url'] ?? '');
+        if (!$avatar) {
+            if ($cleanYt) $avatar = "https://unavatar.io/youtube/@" . $cleanYt;
+            else if ($cleanX) $avatar = "https://unavatar.io/x/" . $cleanX;
+            else if ($cleanInsta) $avatar = "https://ui-avatars.com/api/?name=" . urlencode($name) . "&background=E1306C&color=ffffff&size=512&bold=true&font-size=0.38";
+            else $avatar = "https://api.dicebear.com/7.x/bottts/svg?seed=" . urlencode($name);
+        }
         $phone = !empty($body['contact_phone']) ? substr(trim($body['contact_phone']), 0, 50) : null;
         $email = !empty($body['contact_email']) ? substr(trim($body['contact_email']), 0, 255) : null;
         $otherLinks = !empty($body['other_links']) ? (is_array($body['other_links']) ? json_encode($body['other_links']) : $body['other_links']) : null;
@@ -2534,6 +2628,13 @@ if (strpos($endpoint, 'admin/') === 0) {
         $phone = !empty($body['contact_phone']) ? substr(trim($body['contact_phone']), 0, 50) : null;
         $email = !empty($body['contact_email']) ? substr(trim($body['contact_email']), 0, 255) : null;
         $otherLinks = !empty($body['other_links']) ? (is_array($body['other_links']) ? json_encode($body['other_links']) : $body['other_links']) : null;
+        $avatar = trim($body['avatar_url'] ?? '');
+        if (!$avatar) {
+            if ($cleanYt) $avatar = "https://unavatar.io/youtube/@" . $cleanYt;
+            else if ($cleanX) $avatar = "https://unavatar.io/x/" . $cleanX;
+            else if ($cleanInsta) $avatar = "https://ui-avatars.com/api/?name=" . urlencode($name) . "&background=E1306C&color=ffffff&size=512&bold=true&font-size=0.38";
+            else $avatar = "https://api.dicebear.com/7.x/bottts/svg?seed=" . urlencode($name);
+        }
         $now = date('c');
 
         if ($pdo) {
@@ -2541,12 +2642,12 @@ if (strpos($endpoint, 'admin/') === 0) {
                 $stmt = $pdo->prepare("
                     UPDATE entities SET
                         name = ?, handle_x = ?, handle_yt = ?, handle_insta = ?, contact_phone = ?, contact_email = ?, other_links = ?,
-                        categories = ?, party = ?, institution = ?, narrative = ?, fact_check = ?, proof_url = ?, upvotes = ?, updated_at = ?
+                        avatar_url = ?, categories = ?, party = ?, institution = ?, narrative = ?, fact_check = ?, proof_url = ?, upvotes = ?, updated_at = ?
                     WHERE id = ?
                 ");
                 $stmt->execute([
                     $name, $cleanX, $cleanYt, $cleanInsta, $phone, $email, $otherLinks,
-                    $cats, $body['party'] ?? null, $body['institution'] ?? null,
+                    $avatar, $cats, $body['party'] ?? null, $body['institution'] ?? null,
                     $body['narrative'] ?? '', $body['fact_check'] ?? null, $body['proof_url'] ?? null,
                     (int)($body['upvotes'] ?? 0), $now, $entId
                 ]);
@@ -2754,18 +2855,22 @@ if (strpos($endpoint, 'admin/') === 0) {
                 $stmt->execute([$cutoff3Min]);
                 $liveCount = (int)($stmt->fetch()['count'] ?? 0);
 
-                $stmt = $pdo->query("SELECT ip, device_type, os, browser, user_agent, visit_count, current_page, first_visited, last_seen, is_blocked FROM site_visitors ORDER BY last_seen DESC LIMIT 120");
+                $stmt = $pdo->query("SELECT ip, device_type, os, browser, user_agent, visit_count, current_page, first_visited, last_seen, is_blocked FROM site_visitors GROUP BY ip ORDER BY last_seen DESC LIMIT 120");
                 $rawVisitors = $stmt->fetchAll();
+                $seenIps = [];
                 foreach ($rawVisitors as $v) {
+                    $vIp = $v['ip'] ?? '';
+                    if (!$vIp || isset($seenIps[$vIp])) continue;
+                    $seenIps[$vIp] = true;
                     $visitors[] = [
-                        'ip' => $v['ip'],
-                        'device_type' => $v['device_type'],
-                        'os' => $v['os'],
-                        'browser' => $v['browser'],
-                        'visit_count' => (int)$v['visit_count'],
-                        'current_page' => $v['current_page'],
-                        'first_visited' => $v['first_visited'],
-                        'last_seen' => $v['last_seen'],
+                        'ip' => $vIp,
+                        'device_type' => $v['device_type'] ?: 'Desktop',
+                        'os' => $v['os'] ?: 'Unknown OS',
+                        'browser' => $v['browser'] ?: 'Unknown Browser',
+                        'visit_count' => (int)($v['visit_count'] ?? 1),
+                        'current_page' => $v['current_page'] ?: 'Homepage',
+                        'first_visited' => $v['first_visited'] ?: date('c'),
+                        'last_seen' => $v['last_seen'] ?: date('c'),
                         'is_online' => ($v['last_seen'] >= $cutoff3Min),
                         'is_blocked' => (bool)$v['is_blocked']
                     ];
@@ -3169,9 +3274,90 @@ if (strpos($endpoint, 'admin/') === 0) {
         exit;
     }
 
+    // Admin: Backup Database to JSON Dump
+    if ($endpoint === 'admin/backup' && $method === 'GET') {
+        $backup = [
+            'timestamp' => date('c'),
+            'entities' => [],
+            'nationalist_influencers' => [],
+            'site_categories' => [],
+            'playlist_tracks' => [],
+            'admin_posts' => [],
+            'reports' => [],
+            'system_settings' => [],
+            'govt_polls' => []
+        ];
+
+        if ($pdo) {
+            try {
+                $backup['entities'] = $pdo->query("SELECT * FROM entities")->fetchAll() ?: [];
+                $backup['nationalist_influencers'] = $pdo->query("SELECT * FROM nationalist_influencers")->fetchAll() ?: [];
+                $backup['site_categories'] = $pdo->query("SELECT * FROM site_categories")->fetchAll() ?: [];
+                $backup['playlist_tracks'] = $pdo->query("SELECT * FROM playlist_tracks")->fetchAll() ?: [];
+                $backup['admin_posts'] = $pdo->query("SELECT * FROM admin_posts")->fetchAll() ?: [];
+                $backup['reports'] = $pdo->query("SELECT * FROM reports")->fetchAll() ?: [];
+                $backup['system_settings'] = $pdo->query("SELECT * FROM system_settings")->fetchAll() ?: [];
+                $backup['govt_polls'] = $pdo->query("SELECT * FROM govt_polls")->fetchAll() ?: [];
+            } catch (Exception $e) {}
+        }
+
+        header('Content-Type: application/json; charset=utf-8');
+        header('Content-Disposition: attachment; filename="exposed-propagandus-backup-' . time() . '.json"');
+        echo json_encode($backup, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        exit;
+    }
+
     // Admin: Restore Database from Snapshot
     if ($endpoint === 'admin/restore' && $method === 'POST') {
-        echo json_encode(['success' => true, 'message' => 'Restore command acknowledged.']);
+        $data = $body['backup'] ?? $body;
+        if (!$data || !is_array($data)) {
+            http_response_code(400);
+            echo json_encode(['error' => 'Invalid restore data']);
+            exit;
+        }
+
+        if ($pdo) {
+            try {
+                if (!empty($data['entities']) && is_array($data['entities'])) {
+                    foreach ($data['entities'] as $ent) {
+                        $stmt = $pdo->prepare("INSERT INTO entities (id, name, handle_x, handle_yt, handle_insta, avatar_url, categories, party, institution, narrative, fact_check, proof_url, upvotes, is_verified, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE name=VALUES(name), narrative=VALUES(narrative), fact_check=VALUES(fact_check), avatar_url=VALUES(avatar_url)");
+                        $stmt->execute([
+                            $ent['id'], $ent['name'], $ent['handle_x'] ?? '', $ent['handle_yt'] ?? '',
+                            $ent['handle_insta'] ?? '', $ent['avatar_url'] ?? '',
+                            is_array($ent['categories']) ? json_encode($ent['categories']) : ($ent['categories'] ?? '[]'),
+                            $ent['party'] ?? null, $ent['institution'] ?? null,
+                            $ent['narrative'] ?? '', $ent['fact_check'] ?? null, $ent['proof_url'] ?? null,
+                            (int)($ent['upvotes'] ?? 0), (int)($ent['is_verified'] ?? 1),
+                            $ent['created_at'] ?? date('c'), $ent['updated_at'] ?? date('c')
+                        ]);
+                    }
+                }
+                if (!empty($data['nationalist_influencers']) && is_array($data['nationalist_influencers'])) {
+                    foreach ($data['nationalist_influencers'] as $nat) {
+                        $stmt = $pdo->prepare("INSERT INTO nationalist_influencers (id, name, category, categories, description, avatar_url, handle_x, handle_yt, handle_insta, upvotes, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE name=VALUES(name), description=VALUES(description), avatar_url=VALUES(avatar_url)");
+                        $stmt->execute([
+                            $nat['id'], $nat['name'], $nat['category'] ?? 'Defence',
+                            is_array($nat['categories']) ? json_encode($nat['categories']) : ($nat['categories'] ?? '[]'),
+                            $nat['description'] ?? '', $nat['avatar_url'] ?? '', $nat['handle_x'] ?? '',
+                            $nat['handle_yt'] ?? '', $nat['handle_insta'] ?? '', (int)($nat['upvotes'] ?? 0),
+                            $nat['status'] ?? 'approved', $nat['created_at'] ?? date('c'), $nat['updated_at'] ?? date('c')
+                        ]);
+                    }
+                }
+                if (!empty($data['admin_posts']) && is_array($data['admin_posts'])) {
+                    foreach ($data['admin_posts'] as $post) {
+                        $stmt = $pdo->prepare("INSERT INTO admin_posts (id, title, content, image_url, badge, is_pinned, likes, views, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE title=VALUES(title), content=VALUES(content), image_url=VALUES(image_url)");
+                        $stmt->execute([
+                            $post['id'], $post['title'], $post['content'], $post['image_url'] ?? null,
+                            $post['badge'] ?? 'DISPATCH', (int)($post['is_pinned'] ?? 0),
+                            (int)($post['likes'] ?? 0), (int)($post['views'] ?? 0),
+                            $post['created_at'] ?? date('c'), $post['updated_at'] ?? date('c')
+                        ]);
+                    }
+                }
+            } catch (Exception $e) {}
+        }
+        echo json_encode(['success' => true, 'message' => 'Database state restored successfully.']);
         exit;
     }
 }

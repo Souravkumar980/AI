@@ -22,11 +22,17 @@ export default function BjpVotePoll() {
 
   const fetchPoll = async () => {
     try {
-      const res = await fetch('/api/govt-poll');
+      const baseUrl = (typeof window !== 'undefined' && window.__API_BASE_URL__) ? window.__API_BASE_URL__.replace(/\/+$/, '') : '';
+      const res = await fetch(`${baseUrl}/api/govt-poll`);
       if (res.ok) {
         const data = await res.json();
         if (data && !data.error) {
-          setPollData(data);
+          setPollData(prev => ({
+            ...prev,
+            ...data,
+            // Keep user choice if already voted locally
+            userVoted: data.userVoted !== undefined ? data.userVoted : prev.userVoted
+          }));
         }
       }
     } catch (err) {
@@ -36,6 +42,8 @@ export default function BjpVotePoll() {
 
   useEffect(() => {
     fetchPoll();
+    const interval = setInterval(fetchPoll, 5000);
+    return () => clearInterval(interval);
   }, []);
 
   const handleVote = async (choice) => {
@@ -59,7 +67,8 @@ export default function BjpVotePoll() {
     setVoting(true);
 
     try {
-      const res = await fetch('/api/govt-poll/vote', {
+      const baseUrl = (typeof window !== 'undefined' && window.__API_BASE_URL__) ? window.__API_BASE_URL__.replace(/\/+$/, '') : '';
+      const res = await fetch(`${baseUrl}/api/govt-poll/vote`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ choice })
@@ -67,8 +76,8 @@ export default function BjpVotePoll() {
 
       const data = await res.json();
 
-      if (res.ok) {
-        setPollData(data);
+      if (res.ok && data) {
+        setPollData(prev => ({ ...prev, ...data, userVoted: choice }));
         if (choice === 'yes') {
           setVoteToast('🚩 BHARAT MATA KI JAI! Your vote for BJP / NDA (2029) is recorded!');
         } else {
@@ -76,7 +85,7 @@ export default function BjpVotePoll() {
         }
         setTimeout(() => setVoteToast(''), 4500);
       } else {
-        // Still update local choice if server returns current state
+        // Optimistic local state update
         setPollData(prev => ({ ...prev, userVoted: choice }));
       }
     } catch (err) {
@@ -112,7 +121,7 @@ export default function BjpVotePoll() {
           </h2>
 
           <p className="text-xs sm:text-sm font-display text-gray-700 font-bold max-w-2xl mb-6">
-            Tap to vote or freely switch your stance. Real-time patriotic pulse on India's developmental momentum and nationalist leadership.
+            Tap to vote or freely switch your stance (1 vote per verified IP). Transparent real-time pulse of citizen mandate.
           </p>
 
           {/* Toast Notification */}
@@ -168,31 +177,40 @@ export default function BjpVotePoll() {
 
           {/* Real-time Progress Bar & Percentage Pill */}
           <div className="w-full max-w-xl">
-            <div className="w-full bg-gray-200 border-3 border-black rounded-full h-7 overflow-hidden flex shadow-[3px_3px_0px_#000] mb-2.5">
-              <div
-                className="bg-tirangaGreen h-full transition-all duration-1000 flex items-center justify-center text-xs font-mono font-black text-white px-2"
-                style={{ width: `${Math.max(10, pollData.yesPercent || 90)}%` }}
-              >
-                {pollData.yesPercent}% YES
+            {(!pollData.totalVotes || pollData.totalVotes === 0) ? (
+              /* Neutral Gray Bar when 0 votes */
+              <div className="w-full bg-gray-200 border-3 border-black rounded-full h-8 overflow-hidden flex items-center justify-center shadow-[3px_3px_0px_#000] mb-2.5 px-3">
+                <span className="text-xs font-mono font-black text-gray-500 uppercase tracking-wider">
+                  0 Citizen Votes • Cast the first vote!
+                </span>
               </div>
-              <div
-                className="bg-red-600 h-full transition-all duration-1000 flex items-center justify-center text-xs font-mono font-black text-white px-2"
-                style={{ width: `${Math.max(0, pollData.noPercent || 0)}%` }}
-              >
-                {pollData.noPercent > 0 ? `${pollData.noPercent}%` : ''}
+            ) : (
+              <div className="w-full bg-gray-200 border-3 border-black rounded-full h-8 overflow-hidden flex shadow-[3px_3px_0px_#000] mb-2.5">
+                <div
+                  className="bg-tirangaGreen h-full transition-all duration-700 flex items-center justify-center text-xs font-mono font-black text-white px-2 truncate"
+                  style={{ width: `${pollData.yesPercent}%` }}
+                >
+                  {pollData.yesPercent > 12 ? `${pollData.yesPercent}% YES` : (pollData.yesPercent > 0 ? `${pollData.yesPercent}%` : '')}
+                </div>
+                <div
+                  className="bg-red-600 h-full transition-all duration-700 flex items-center justify-center text-xs font-mono font-black text-white px-2 truncate"
+                  style={{ width: `${pollData.noPercent}%` }}
+                >
+                  {pollData.noPercent > 12 ? `${pollData.noPercent}% NO` : (pollData.noPercent > 0 ? `${pollData.noPercent}%` : '')}
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Stats row beneath bar */}
             <div className="flex items-center justify-between text-xs font-mono font-bold text-gray-700 px-1">
-              <span className="flex items-center gap-1.5 text-tirangaGreen">
+              <span className="flex items-center gap-1.5 text-tirangaGreen font-black">
                 <span className="w-2.5 h-2.5 rounded-full bg-tirangaGreen inline-block" />
                 <span>YES: {pollData.yesVotes?.toLocaleString() || 0}</span>
               </span>
-              <span className="text-gray-500 font-display text-[11px]">
+              <span className="text-gray-500 font-display text-[11px] font-bold">
                 {pollData.totalVotes?.toLocaleString() || 0} Total Citizen Votes
               </span>
-              <span className="flex items-center gap-1.5 text-red-600">
+              <span className="flex items-center gap-1.5 text-red-600 font-black">
                 <span>NO: {pollData.noVotes?.toLocaleString() || 0}</span>
                 <span className="w-2.5 h-2.5 rounded-full bg-red-600 inline-block" />
               </span>

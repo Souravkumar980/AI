@@ -86,6 +86,16 @@ function formatTime(seconds) {
   return `${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`;
 }
 
+// Helper to reliably construct community API URLs
+export function getCommunityApiUrl(endpoint) {
+  const base = (typeof window !== 'undefined' && window.__API_BASE_URL__ !== undefined)
+    ? window.__API_BASE_URL__
+    : '';
+  const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+  const cleanBase = base ? base.replace(/\/+$/, '') : '';
+  return `${cleanBase}${cleanEndpoint}`;
+}
+
 // Helper to resolve media URLs (handles relative /api/community/files/... for static hosting)
 export function resolveMediaUrl(url) {
   if (!url) return '';
@@ -93,10 +103,13 @@ export function resolveMediaUrl(url) {
     return url;
   }
   if (url.startsWith('/api')) {
-    const base = (typeof window !== 'undefined' && window.__API_BASE_URL__) || 'https://exposed-api.exposedpropagandu.workers.dev';
+    const base = (typeof window !== 'undefined' && window.__API_BASE_URL__ !== undefined)
+      ? window.__API_BASE_URL__
+      : '';
     const key = (typeof window !== 'undefined' && window.__EP_CLIENT_KEY__) || 'ep-client-v1-bharat-first-2024';
     const separator = url.includes('?') ? '&' : '?';
-    return `${base.replace(/\/+$/, '')}${url}${url.includes('key=') ? '' : `${separator}key=${key}`}`;
+    const cleanBase = base ? base.replace(/\/+$/, '') : '';
+    return `${cleanBase}${url}${url.includes('key=') ? '' : `${separator}key=${key}`}`;
   }
   return url;
 }
@@ -165,7 +178,7 @@ function WhatsAppLinkPreview({ url }) {
     let isMounted = true;
     setLoading(true);
 
-    fetch(`/api/link-preview?url=${encodeURIComponent(url)}`)
+    fetch(getCommunityApiUrl(`/api/link-preview?url=${encodeURIComponent(url)}`))
       .then(res => res.json())
       .then(resData => {
         if (!isMounted) return;
@@ -640,9 +653,13 @@ export default function CommunityPage({ onSelectPage }) {
   // Sync state with backend database
   const fetchCommunitySync = async () => {
     try {
-      const apiUrl = (typeof window !== 'undefined' && window.__API_BASE_URL__)
-        ? `${window.__API_BASE_URL__.replace(/\/+$/, '')}/api/community/sync`
-        : '/api/community/sync';
+      const joinParam = new URLSearchParams(window.location.search).get('join') || '';
+      const queryParams = new URLSearchParams();
+      if (currentUser?.id) queryParams.set('user_id', currentUser.id);
+      if (currentUser?.username) queryParams.set('username', currentUser.username);
+      if (joinParam) queryParams.set('join', joinParam);
+      const qStr = queryParams.toString() ? `?${queryParams.toString()}` : '';
+      const apiUrl = getCommunityApiUrl(`/api/community/sync${qStr}`);
 
       const res = await fetch(apiUrl);
       if (res.ok) {
@@ -742,7 +759,7 @@ export default function CommunityPage({ onSelectPage }) {
     // 2. Server-Sent Events (SSE) Stream (Cross-Device / Cross-Network instant push)
     const connectSse = () => {
       try {
-        const streamUrl = (window.__API_BASE_URL__ || '') + '/api/community/stream';
+        const streamUrl = getCommunityApiUrl('/api/community/stream');
         eventSource = new EventSource(streamUrl);
 
         eventSource.onmessage = (event) => {
@@ -925,7 +942,7 @@ export default function CommunityPage({ onSelectPage }) {
 
     // Call Backend API
     try {
-      const res = await fetch('/api/community/register', {
+      const res = await fetch(getCommunityApiUrl('/api/community/register'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1041,7 +1058,7 @@ export default function CommunityPage({ onSelectPage }) {
 
       let finalAvatarUrl = dataUrl;
       try {
-        const uploadRes = await fetch('/api/community/upload', {
+        const uploadRes = await fetch(getCommunityApiUrl('/api/community/upload'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ filename: `avatar_${currentUser.id}.jpg`, data: dataUrl, mimeType: 'image/jpeg' })
@@ -1052,7 +1069,7 @@ export default function CommunityPage({ onSelectPage }) {
         }
       } catch (e) {}
 
-      await fetch('/api/community/profile/avatar', {
+      await fetch(getCommunityApiUrl('/api/community/profile/avatar'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1084,7 +1101,7 @@ export default function CommunityPage({ onSelectPage }) {
     const pass = loginForm.password.trim();
 
     try {
-      const res = await fetch('/api/community/login', {
+      const res = await fetch(getCommunityApiUrl('/api/community/login'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ emailOrUsername: cred, password: pass })
@@ -1187,7 +1204,7 @@ export default function CommunityPage({ onSelectPage }) {
     }
 
     try {
-      const res = await fetch('/api/community/profile/username', {
+      const res = await fetch(getCommunityApiUrl('/api/community/profile/username'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: currentUser.id, new_username: cleanUsername })
@@ -1340,9 +1357,7 @@ export default function CommunityPage({ onSelectPage }) {
 
             if (dataPayload) {
               try {
-                const apiUrl = (typeof window !== 'undefined' && window.__API_BASE_URL__)
-                  ? `${window.__API_BASE_URL__.replace(/\/+$/, '')}/api/community/upload`
-                  : '/api/community/upload';
+                const apiUrl = getCommunityApiUrl('/api/community/upload');
 
                 const res = await fetch(apiUrl, {
                   method: 'POST',
@@ -1390,9 +1405,7 @@ export default function CommunityPage({ onSelectPage }) {
           is_uploading: false
         };
 
-        const apiUrl = (typeof window !== 'undefined' && window.__API_BASE_URL__)
-          ? `${window.__API_BASE_URL__.replace(/\/+$/, '')}/api/community/messages`
-          : '/api/community/messages';
+        const apiUrl = getCommunityApiUrl('/api/community/messages');
 
         const res = await fetch(apiUrl, {
           method: 'POST',
@@ -1478,9 +1491,7 @@ export default function CommunityPage({ onSelectPage }) {
     } catch (e) {}
 
     try {
-      const apiUrl = (typeof window !== 'undefined' && window.__API_BASE_URL__)
-        ? `${window.__API_BASE_URL__.replace(/\/+$/, '')}/api/community/messages`
-        : '/api/community/messages';
+      const apiUrl = getCommunityApiUrl('/api/community/messages');
 
       const res = await fetch(apiUrl, {
         method: 'POST',
@@ -1537,9 +1548,7 @@ export default function CommunityPage({ onSelectPage }) {
     broadcastCrossTab({ type: 'REACTION_UPDATE', message_id: messageId, reactions: updatedRx });
 
     try {
-      const apiUrl = (typeof window !== 'undefined' && window.__API_BASE_URL__)
-        ? `${window.__API_BASE_URL__.replace(/\/+$/, '')}/api/community/messages/react`
-        : '/api/community/messages/react';
+      const apiUrl = getCommunityApiUrl('/api/community/messages/react');
 
       await fetch(apiUrl, {
         method: 'POST',
@@ -1720,9 +1729,7 @@ export default function CommunityPage({ onSelectPage }) {
     setActiveChannelObj(newChan);
 
     try {
-      const apiUrl = (typeof window !== 'undefined' && window.__API_BASE_URL__)
-        ? `${window.__API_BASE_URL__.replace(/\/+$/, '')}/api/community/channels`
-        : '/api/community/channels';
+      const apiUrl = getCommunityApiUrl('/api/community/channels');
 
       const res = await fetch(apiUrl, {
         method: 'POST',
@@ -1813,9 +1820,7 @@ export default function CommunityPage({ onSelectPage }) {
     broadcastCrossTab({ type: 'CHANNEL_UPDATE', channel_id: chanId });
 
     try {
-      const apiUrl = (typeof window !== 'undefined' && window.__API_BASE_URL__)
-        ? `${window.__API_BASE_URL__.replace(/\/+$/, '')}/api/community/channels/request`
-        : '/api/community/channels/request';
+      const apiUrl = getCommunityApiUrl('/api/community/channels/request');
 
       await fetch(apiUrl, {
         method: 'POST',
@@ -1850,9 +1855,7 @@ export default function CommunityPage({ onSelectPage }) {
     broadcastCrossTab({ type: 'CHANNEL_UPDATE', channel_id: chanId });
 
     try {
-      const apiUrl = (typeof window !== 'undefined' && window.__API_BASE_URL__)
-        ? `${window.__API_BASE_URL__.replace(/\/+$/, '')}/api/community/channels/admit`
-        : '/api/community/channels/admit';
+      const apiUrl = getCommunityApiUrl('/api/community/channels/admit');
 
       await fetch(apiUrl, {
         method: 'POST',
@@ -1879,9 +1882,7 @@ export default function CommunityPage({ onSelectPage }) {
     broadcastCrossTab({ type: 'CHANNEL_UPDATE', channel_id: chanId });
 
     try {
-      const apiUrl = (typeof window !== 'undefined' && window.__API_BASE_URL__)
-        ? `${window.__API_BASE_URL__.replace(/\/+$/, '')}/api/community/channels/deny`
-        : '/api/community/channels/deny';
+      const apiUrl = getCommunityApiUrl('/api/community/channels/deny');
 
       await fetch(apiUrl, {
         method: 'POST',
@@ -1960,9 +1961,7 @@ export default function CommunityPage({ onSelectPage }) {
     setAdminQueries([newQuery, ...adminQueries]);
     broadcastCrossTab({ type: 'NEW_QUERY', query: newQuery });
     try {
-      const apiUrl = (typeof window !== 'undefined' && window.__API_BASE_URL__)
-        ? `${window.__API_BASE_URL__.replace(/\/+$/, '')}/api/community/contact`
-        : '/api/community/contact';
+      const apiUrl = getCommunityApiUrl('/api/community/contact');
 
       await fetch(apiUrl, {
         method: 'POST',
@@ -1992,9 +1991,7 @@ export default function CommunityPage({ onSelectPage }) {
       setMessages(messages.filter(m => m.id !== msgId));
       broadcastCrossTab({ type: 'DELETE_MESSAGE', message_id: msgId });
       try {
-        const apiUrl = (typeof window !== 'undefined' && window.__API_BASE_URL__)
-          ? `${window.__API_BASE_URL__.replace(/\/+$/, '')}/api/community/messages/${msgId}`
-          : `/api/community/messages/${msgId}`;
+        const apiUrl = getCommunityApiUrl(`/api/community/messages/${msgId}`);
         await fetch(apiUrl, { method: 'DELETE' });
       } catch {}
     }
@@ -2010,7 +2007,7 @@ export default function CommunityPage({ onSelectPage }) {
       broadcastCrossTab({ type: 'USER_BANNED', banned_user_id: userId, target_username: targetUsername });
       const adminToken = localStorage.getItem('propagandus_admin_key') || '';
       try {
-        await fetch('/api/community/admin/ban', {
+        await fetch(getCommunityApiUrl('/api/community/admin/ban'), {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -2034,7 +2031,7 @@ export default function CommunityPage({ onSelectPage }) {
     setUsers(users.map(u => u.id === userId ? { ...u, verified_type: next } : u));
     const adminToken = localStorage.getItem('propagandus_admin_key') || '';
     try {
-      await fetch('/api/community/admin/verify-badge', {
+      await fetch(getCommunityApiUrl('/api/community/admin/verify-badge'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -2588,7 +2585,11 @@ export default function CommunityPage({ onSelectPage }) {
             {activeChannelObj && (
               <button
                 onClick={() => {
-                  const token = activeChannelObj.join_token || activeChannelObj.id;
+                  const token = activeChannelObj?.join_token || activeChannelObj?.id;
+                  if (!token) {
+                    alert('Channel invite link is generating. Please wait a moment.');
+                    return;
+                  }
                   const link = `${window.location.origin}/?page=community&join=${encodeURIComponent(token)}`;
                   navigator.clipboard.writeText(link);
                   alert(`✓ Channel invite link copied to clipboard!\nShare this with friends: ${link}`);

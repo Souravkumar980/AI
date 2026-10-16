@@ -267,7 +267,7 @@ CREATE TABLE `community_users` (
   `name` VARCHAR(255) NOT NULL,
   `username` VARCHAR(100) NOT NULL,
   `email` VARCHAR(255) NOT NULL,
-  `phone` VARCHAR(50) NOT NULL,
+  `phone` VARCHAR(50) DEFAULT '',
   `password_hash` VARCHAR(255) NOT NULL,
   `avatar_url` TEXT DEFAULT NULL,
   `verified_type` VARCHAR(50) NOT NULL DEFAULT 'none',
@@ -356,4 +356,134 @@ CREATE TABLE `traffic_logs` (
   `created_at` VARCHAR(64) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- -------------------------------------------------------------
+-- Table: site_visitors (Deduplicated Real Visitor Directory - 1 row per IP)
+-- -------------------------------------------------------------
+DROP TABLE IF EXISTS `site_visitors`;
+CREATE TABLE `site_visitors` (
+  `ip` VARCHAR(64) NOT NULL,
+  `device_type` VARCHAR(50) DEFAULT 'Desktop',
+  `os` VARCHAR(100) DEFAULT 'Unknown OS',
+  `browser` VARCHAR(100) DEFAULT 'Unknown Browser',
+  `user_agent` TEXT DEFAULT NULL,
+  `visit_count` INT NOT NULL DEFAULT 1,
+  `current_page` VARCHAR(120) DEFAULT 'Homepage',
+  `first_visited` VARCHAR(64) NOT NULL,
+  `last_seen` VARCHAR(64) NOT NULL,
+  `is_blocked` TINYINT(1) NOT NULL DEFAULT 0,
+  PRIMARY KEY (`ip`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- -------------------------------------------------------------
+-- Table: visitor_traffic_logs (Real-Time Raw Session Hits)
+-- -------------------------------------------------------------
+DROP TABLE IF EXISTS `visitor_traffic_logs`;
+CREATE TABLE `visitor_traffic_logs` (
+  `id` VARCHAR(100) NOT NULL,
+  `ip` VARCHAR(64) NOT NULL,
+  `device_type` VARCHAR(50) DEFAULT 'Desktop',
+  `os` VARCHAR(100) DEFAULT 'Unknown OS',
+  `browser` VARCHAR(100) DEFAULT 'Unknown Browser',
+  `page` VARCHAR(255) DEFAULT 'Homepage',
+  `user_agent` TEXT DEFAULT NULL,
+  `created_at` VARCHAR(64) NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_vtrf_ip` (`ip`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- -------------------------------------------------------------
+-- Table: activity_logs (Admin & Security Events)
+-- -------------------------------------------------------------
+DROP TABLE IF EXISTS `activity_logs`;
+CREATE TABLE `activity_logs` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `ip` VARCHAR(64) NOT NULL,
+  `action` VARCHAR(100) NOT NULL,
+  `details` TEXT DEFAULT NULL,
+  `created_at` VARCHAR(64) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- -------------------------------------------------------------
+-- Table: announcements (Global Broadcast Bulletin)
+-- -------------------------------------------------------------
+DROP TABLE IF EXISTS `announcements`;
+CREATE TABLE `announcements` (
+  `id` VARCHAR(50) NOT NULL,
+  `title` VARCHAR(255) DEFAULT NULL,
+  `message` TEXT NOT NULL,
+  `link` VARCHAR(255) DEFAULT NULL,
+  `is_active` TINYINT(1) NOT NULL DEFAULT 0,
+  `created_at` VARCHAR(64) NOT NULL,
+  `updated_at` VARCHAR(64) NOT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- -------------------------------------------------------------
+-- Table: community_contact_queries (Citizen Inquiries to Admin)
+-- -------------------------------------------------------------
+DROP TABLE IF EXISTS `community_contact_queries`;
+CREATE TABLE `community_contact_queries` (
+  `id` VARCHAR(100) NOT NULL,
+  `type` VARCHAR(50) NOT NULL,
+  `name` VARCHAR(255) NOT NULL,
+  `email` VARCHAR(255) NOT NULL,
+  `user_id` VARCHAR(100) DEFAULT NULL,
+  `username` VARCHAR(100) DEFAULT NULL,
+  `social_account_id` VARCHAR(255) DEFAULT NULL,
+  `message` TEXT NOT NULL,
+  `proof_file_name` VARCHAR(255) DEFAULT NULL,
+  `proof_file` MEDIUMTEXT DEFAULT NULL,
+  `ip` VARCHAR(64) NOT NULL,
+  `status` VARCHAR(50) NOT NULL DEFAULT 'pending',
+  `created_at` VARCHAR(64) NOT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- -------------------------------------------------------------
+-- Table: community_notifications (Chat & Channel Alerts)
+-- -------------------------------------------------------------
+DROP TABLE IF EXISTS `community_notifications`;
+CREATE TABLE `community_notifications` (
+  `id` VARCHAR(100) NOT NULL,
+  `recipient_id` VARCHAR(100) NOT NULL,
+  `sender_id` VARCHAR(100) NOT NULL,
+  `sender_name` VARCHAR(255) NOT NULL,
+  `sender_username` VARCHAR(100) NOT NULL,
+  `type` VARCHAR(50) NOT NULL,
+  `content` TEXT NOT NULL,
+  `channel_id` VARCHAR(100) DEFAULT NULL,
+  `is_read` TINYINT(1) NOT NULL DEFAULT 0,
+  `created_at` VARCHAR(64) NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `idx_notif_recipient` (`recipient_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- -------------------------------------------------------------
+-- Table: community_channel_members (Channel Memberships)
+-- -------------------------------------------------------------
+DROP TABLE IF EXISTS `community_channel_members`;
+CREATE TABLE `community_channel_members` (
+  `channel_id` VARCHAR(100) NOT NULL,
+  `user_id` VARCHAR(100) NOT NULL,
+  `joined_at` VARCHAR(64) NOT NULL,
+  PRIMARY KEY (`channel_id`, `user_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- -------------------------------------------------------------
+-- Table: community_channel_requests (Private Channel Join Requests)
+-- -------------------------------------------------------------
+DROP TABLE IF EXISTS `community_channel_requests`;
+CREATE TABLE `community_channel_requests` (
+  `id` VARCHAR(100) NOT NULL,
+  `channel_id` VARCHAR(100) NOT NULL,
+  `user_id` VARCHAR(100) NOT NULL,
+  `user_name` VARCHAR(255) NOT NULL,
+  `user_username` VARCHAR(100) NOT NULL,
+  `user_avatar` TEXT DEFAULT NULL,
+  `status` VARCHAR(50) NOT NULL DEFAULT 'pending',
+  `created_at` VARCHAR(64) NOT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 SET FOREIGN_KEY_CHECKS = 1;
+

@@ -291,11 +291,11 @@ export default function PropagandusDatabase({ onOpenSubmit, onOpenReport, onOpen
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex items-center gap-3">
                           <img
-                            src={item.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(item.name)}`}
+                            src={item.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(item.name || 'Propagandu')}&background=E1306C&color=ffffff&size=256&bold=true`}
                             alt={item.name}
                             className="w-12 h-12 rounded-xl border border-black/30 object-cover shadow-sm bg-white shrink-0"
                             onError={(e) => {
-                              e.target.src = `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(item.name)}`;
+                              e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(item.name || 'Propagandu')}&background=E1306C&color=ffffff&size=256&bold=true`;
                             }}
                           />
                           <div>

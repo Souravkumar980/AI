@@ -94,13 +94,20 @@ export default function SpotlightSection({ reloadTrigger }) {
   const fetchSpotlight = async () => {
     try {
       setLoading(true);
-      const res = await fetch('/api/spotlight');
+      const baseUrl = (typeof window !== 'undefined' && window.__API_BASE_URL__) ? window.__API_BASE_URL__.replace(/\/+$/, '') : '';
+      const res = await fetch(`${baseUrl}/api/spotlight`);
       if (res.ok) {
         const data = await res.json();
-        setSpotlight(data);
+        // If data has entity property instead of spotlight object, treat as off
+        if (data && data.type) {
+          setSpotlight(data);
+        } else {
+          setSpotlight({ type: 'off' });
+        }
       }
     } catch (e) {
       console.error('Failed to fetch spotlight media', e);
+      setSpotlight({ type: 'off' });
     } finally {
       setLoading(false);
     }
@@ -270,8 +277,14 @@ export default function SpotlightSection({ reloadTrigger }) {
     }
   };
 
-  // If loading or admin turned OFF spotlight, render nothing!
-  if (loading || !spotlight || spotlight.type === 'off') {
+  // If loading, or admin turned OFF spotlight, or media URL missing, render nothing!
+  if (loading || !spotlight || !spotlight.type || spotlight.type === 'off') {
+    return null;
+  }
+  if (spotlight.type === 'video' && (!spotlight.videoUrl || !videoId)) {
+    return null;
+  }
+  if (spotlight.type === 'image' && !spotlight.imageUrl) {
     return null;
   }
 

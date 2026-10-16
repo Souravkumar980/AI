@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import IndianFlagLogo from './IndianFlagLogo';
 import { OPPOSITION_PARTIES } from '../data/partiesAndInstitutions';
+import { autoFetchSocialProfile } from '../utils/socialExtractor';
 import {
   Lock,
   Unlock,
@@ -114,6 +115,8 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
     is_verified: 1
   });
 
+  const [isFetchingAvatar, setIsFetchingAvatar] = useState(false);
+
   // Dynamic Categories Management State
   const [categoriesList, setCategoriesList] = useState([]);
   const [newCategoryType, setNewCategoryType] = useState('nationalist');
@@ -217,6 +220,29 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
     recentLogs: []
   });
   const [loadingLiveTraffic, setLoadingLiveTraffic] = useState(false);
+
+  // Strictly deduplicated unique visitors directory by IP address
+  const uniqueVisitorsList = React.useMemo(() => {
+    const map = new Map();
+    (liveTrafficData.visitors || []).forEach(v => {
+      if (!v || !v.ip) return;
+      if (!map.has(v.ip)) {
+        map.set(v.ip, { ...v, visit_count: Number(v.visit_count) || 1 });
+      } else {
+        const prev = map.get(v.ip);
+        prev.visit_count = (prev.visit_count || 1) + (Number(v.visit_count) || 1);
+        if (new Date(v.last_seen) > new Date(prev.last_seen)) {
+          prev.last_seen = v.last_seen;
+          prev.current_page = v.current_page || prev.current_page;
+          prev.is_online = prev.is_online || v.is_online;
+          prev.device_type = v.device_type || prev.device_type;
+          prev.browser = v.browser || prev.browser;
+          prev.os = v.os || prev.os;
+        }
+      }
+    });
+    return Array.from(map.values()).sort((a, b) => new Date(b.last_seen) - new Date(a.last_seen));
+  }, [liveTrafficData.visitors]);
 
   // Check IP Subnet Restriction on Open (strictly 152.59.XXX.XXX)
   useEffect(() => {
@@ -1312,16 +1338,100 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
     }
   };
 
+  // Helper to reliably derive avatar from social handles or name
+  const deriveAvatarFromHandles = (name, yt, x, ig) => {
+    const cleanYt = (yt || '').replace(/^https?:\/\/(www\.)?youtube\.com\/(@|channel\/|c\/)?/, '').replace(/^[@/]+/, '').trim();
+    const cleanX = (x || '').replace(/^https?:\/\/(www\.)?(x|twitter)\.com\//, '').replace(/^[@/]+/, '').trim();
+    const cleanIg = (ig || '').replace(/^https?:\/\/(www\.)?(instagram\.com|instagr\.am)\//, '').replace(/^[@/]+/, '').trim();
+    if (cleanYt) return `https://unavatar.io/youtube/@${cleanYt}`;
+    if (cleanX) return `https://unavatar.io/x/${cleanX}`;
+    if (cleanIg) return `https://ui-avatars.com/api/?name=${encodeURIComponent(cleanIg)}&background=E1306C&color=ffffff&size=512&bold=true`;
+    return `https://ui-avatars.com/api/?name=${encodeURIComponent(name || 'Creator')}&background=0D8ABC&color=ffffff&size=512&bold=true`;
+  };
+
+  const handleAutoFetchAvatar = async (type) => {
+    setIsFetchingAvatar(true);
+    try {
+      let target = '';
+      let name = '';
+      let yt = '';
+      let x = '';
+      let ig = '';
+      if (type === 'directNat') {
+        name = directNatForm.name;
+        yt = directNatForm.handle_yt;
+        x = directNatForm.handle_x;
+        ig = directNatForm.handle_insta;
+        target = yt || x || ig || name;
+      } else if (type === 'directProp') {
+        name = directPropForm.name;
+        yt = directPropForm.handle_yt;
+        x = directPropForm.handle_x;
+        ig = directPropForm.handle_insta;
+        target = yt || x || ig || name;
+      } else if (type === 'editNat' && editingNationalist) {
+        name = editingNationalist.name;
+        yt = editingNationalist.handle_yt;
+        x = editingNationalist.handle_x;
+        ig = editingNationalist.handle_insta;
+        target = yt || x || ig || name;
+      } else if (type === 'editProp' && editingEntity) {
+        name = editingEntity.name;
+        yt = editingEntity.handle_yt;
+        x = editingEntity.handle_x;
+        ig = editingEntity.handle_insta;
+        target = yt || x || ig || name;
+      }
+
+      if (!target && !name) {
+        alert('Please enter a name or at least one handle (YT, X, IG) first.');
+        setIsFetchingAvatar(false);
+        return;
+      }
+
+      let fetchedAvatar = '';
+      try {
+        const res = await autoFetchSocialProfile(target || name);
+        if (res && res.success && res.avatarUrl) {
+          fetchedAvatar = res.avatarUrl;
+        }
+      } catch (err) {}
+
+      if (!fetchedAvatar) {
+        fetchedAvatar = deriveAvatarFromHandles(name, yt, x, ig);
+      }
+
+      if (type === 'directNat') {
+        setDirectNatForm(prev => ({ ...prev, avatar_url: fetchedAvatar }));
+      } else if (type === 'directProp') {
+        setDirectPropForm(prev => ({ ...prev, avatar_url: fetchedAvatar }));
+      } else if (type === 'editNat') {
+        setEditingNationalist(prev => ({ ...prev, avatar_url: fetchedAvatar }));
+      } else if (type === 'editProp') {
+        setEditingEntity(prev => ({ ...prev, avatar_url: fetchedAvatar }));
+      }
+      showToast('Avatar profile picture resolved & set!');
+    } catch (err) {
+      console.error('Auto-fetch avatar error:', err);
+    } finally {
+      setIsFetchingAvatar(false);
+    }
+  };
+
   const handleSaveEntityEdit = async (e) => {
     e.preventDefault();
     try {
+      const payload = { ...editingEntity };
+      if (!payload.avatar_url) {
+        payload.avatar_url = deriveAvatarFromHandles(payload.name, payload.handle_yt, payload.handle_x, payload.handle_insta);
+      }
       const res = await fetch(`/api/admin/entities/${editingEntity.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
           'x-admin-key': adminToken
         },
-        body: JSON.stringify(editingEntity)
+        body: JSON.stringify(payload)
       });
       if (res.ok) {
         showToast('Entity successfully updated!');
@@ -1337,13 +1447,17 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
   const handleDirectAddPropagandusSubmit = async (e) => {
     e.preventDefault();
     try {
+      const payload = { ...directPropForm };
+      if (!payload.avatar_url) {
+        payload.avatar_url = deriveAvatarFromHandles(payload.name, payload.handle_yt, payload.handle_x, payload.handle_insta);
+      }
       const res = await fetch('/api/admin/entities', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'x-admin-key': adminToken
         },
-        body: JSON.stringify(directPropForm)
+        body: JSON.stringify(payload)
       });
       if (res.ok) {
         showToast('Propagandu profile directly created & saved!');
@@ -1431,13 +1545,17 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
   const handleSaveNationalistEdit = async (e) => {
     e.preventDefault();
     try {
+      const payload = { ...editingNationalist };
+      if (!payload.avatar_url) {
+        payload.avatar_url = deriveAvatarFromHandles(payload.name, payload.handle_yt, payload.handle_x, payload.handle_insta);
+      }
       const res = await fetch(`/api/admin/nationalist-influencers/${editingNationalist.id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
           'x-admin-key': adminToken
         },
-        body: JSON.stringify(editingNationalist)
+        body: JSON.stringify(payload)
       });
       if (res.ok) {
         showToast('Nationalist creator updated!');
@@ -1453,13 +1571,17 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
   const handleDirectAddNationalistSubmit = async (e) => {
     e.preventDefault();
     try {
+      const payload = { ...directNatForm };
+      if (!payload.avatar_url) {
+        payload.avatar_url = deriveAvatarFromHandles(payload.name, payload.handle_yt, payload.handle_x, payload.handle_insta);
+      }
       const res = await fetch('/api/admin/nationalist-influencers', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'x-admin-key': adminToken
         },
-        body: JSON.stringify(directNatForm)
+        body: JSON.stringify(payload)
       });
       if (res.ok) {
         showToast('Nationalist creator directly added & live!');
@@ -1552,8 +1674,30 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
   };
 
   // ---------------- Backup & Restore ----------------
-  const handleDownloadBackup = () => {
-    window.open(`/api/admin/backup?adminKey=${encodeURIComponent(adminToken)}`, '_blank');
+  const handleDownloadBackup = async () => {
+    try {
+      showToast('Generating database backup JSON...');
+      const baseUrl = (typeof window !== 'undefined' && window.__API_BASE_URL__) ? window.__API_BASE_URL__.replace(/\/+$/, '') : '';
+      const backupUrl = `${baseUrl}/api/admin/backup?adminKey=${encodeURIComponent(adminToken)}`;
+      const res = await fetch(backupUrl, {
+        headers: { 'x-admin-key': adminToken }
+      });
+      if (!res.ok) {
+        throw new Error(`Failed to generate backup: HTTP ${res.status}`);
+      }
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `exposed-propagandus-backup-${Date.now()}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      showToast('Backup JSON downloaded successfully!');
+    } catch (e) {
+      alert('Backup download failed: ' + e.message);
+    }
   };
 
   const handleRestoreFile = (e) => {
@@ -2061,7 +2205,7 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
                         <h4 className="font-comic text-lg sm:text-xl text-black uppercase flex items-center gap-2">
                           <span>Detailed Visitor Directory</span>
                           <span className="bg-gray-100 border border-black text-xs font-mono px-2 py-0.5 rounded-full">
-                            {liveTrafficData.visitors?.length || 0} Records
+                            {uniqueVisitorsList.length} Unique IPs
                           </span>
                         </h4>
                         <p className="text-xs font-display text-gray-600">
@@ -2072,14 +2216,14 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
 
                     {/* Mobile Card View (hidden on md and larger) */}
                     <div className="md:hidden space-y-3">
-                      {liveTrafficData.visitors?.length === 0 ? (
+                      {uniqueVisitorsList.length === 0 ? (
                         <div className="p-6 text-center text-xs font-mono text-gray-500">
                           No visitor traffic recorded yet.
                         </div>
                       ) : (
-                        liveTrafficData.visitors?.map((v, idx) => (
+                        uniqueVisitorsList.map((v, idx) => (
                           <div
-                            key={idx}
+                            key={v.ip || idx}
                             className={`border-2 border-black rounded-xl p-3 space-y-2 ${
                               v.is_online ? 'bg-emerald-50/60' : 'bg-gray-50'
                             }`}
@@ -2157,14 +2301,14 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-200 font-mono text-xs">
-                          {liveTrafficData.visitors?.length === 0 ? (
+                          {uniqueVisitorsList.length === 0 ? (
                             <tr>
                               <td colSpan="7" className="p-6 text-center text-gray-500 font-mono">
                                 No visitor traffic recorded yet.
                               </td>
                             </tr>
                           ) : (
-                            liveTrafficData.visitors?.map((v, idx) => (
+                            uniqueVisitorsList.map((v, idx) => (
                               <tr key={idx} className={`hover:bg-gray-50 ${v.is_online ? 'bg-emerald-50/40' : ''}`}>
                                 <td className="p-3">
                                   {v.is_online ? (
@@ -4913,6 +5057,38 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
                 </div>
 
                 <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block font-black uppercase text-gray-700">Avatar / Profile Picture URL</label>
+                    <button
+                      type="button"
+                      onClick={() => handleAutoFetchAvatar('editProp')}
+                      disabled={isFetchingAvatar}
+                      className="px-2 py-0.5 bg-yellow-400 hover:bg-yellow-500 text-black font-black text-[10px] rounded border border-black shadow-[1px_1px_0px_#000] flex items-center gap-1 transition-transform active:scale-95"
+                    >
+                      <Sparkles className="w-3 h-3" />
+                      {isFetchingAvatar ? 'Fetching...' : '⚡ Auto-Fetch Avatar'}
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <img
+                      src={editingEntity.avatar_url || 'https://ui-avatars.com/api/?name=Propagandu&background=0D8ABC&color=fff&size=128'}
+                      alt="Preview"
+                      className="w-10 h-10 rounded-xl border border-black object-cover bg-gray-100 shrink-0"
+                      onError={(e) => {
+                        e.target.src = 'https://ui-avatars.com/api/?name=Propagandu&background=0D8ABC&color=fff&size=128';
+                      }}
+                    />
+                    <input
+                      type="url"
+                      placeholder="https://... (or click Auto-Fetch)"
+                      value={editingEntity.avatar_url || ''}
+                      onChange={(e) => setEditingEntity({ ...editingEntity, avatar_url: e.target.value })}
+                      className="flex-1 px-3 py-1.5 bg-gray-50 border border-black rounded font-mono text-xs"
+                    />
+                  </div>
+                </div>
+
+                <div>
                   <label className="block font-black uppercase text-gray-700 mb-1">
                     Public Upvotes (Votes Count)
                   </label>
@@ -5007,6 +5183,38 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
                       value={editingNationalist.handle_insta || ''}
                       onChange={(e) => setEditingNationalist({ ...editingNationalist, handle_insta: e.target.value })}
                       className="w-full px-2 py-1.5 bg-gray-50 border border-black rounded font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block font-black uppercase text-gray-700">Avatar / Profile Picture URL</label>
+                    <button
+                      type="button"
+                      onClick={() => handleAutoFetchAvatar('editNat')}
+                      disabled={isFetchingAvatar}
+                      className="px-2 py-0.5 bg-yellow-400 hover:bg-yellow-500 text-black font-black text-[10px] rounded border border-black shadow-[1px_1px_0px_#000] flex items-center gap-1 transition-transform active:scale-95"
+                    >
+                      <Sparkles className="w-3 h-3" />
+                      {isFetchingAvatar ? 'Fetching...' : '⚡ Auto-Fetch Avatar'}
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <img
+                      src={editingNationalist.avatar_url || 'https://ui-avatars.com/api/?name=Nationalist&background=138808&color=fff&size=128'}
+                      alt="Preview"
+                      className="w-10 h-10 rounded-xl border border-black object-cover bg-gray-100 shrink-0"
+                      onError={(e) => {
+                        e.target.src = 'https://ui-avatars.com/api/?name=Nationalist&background=138808&color=fff&size=128';
+                      }}
+                    />
+                    <input
+                      type="url"
+                      placeholder="https://... (or click Auto-Fetch)"
+                      value={editingNationalist.avatar_url || ''}
+                      onChange={(e) => setEditingNationalist({ ...editingNationalist, avatar_url: e.target.value })}
+                      className="flex-1 px-3 py-1.5 bg-gray-50 border border-black rounded font-mono text-xs"
                     />
                   </div>
                 </div>
@@ -5171,6 +5379,38 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
                 </div>
 
                 <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block font-black uppercase text-gray-700">Avatar / Profile Picture URL</label>
+                    <button
+                      type="button"
+                      onClick={() => handleAutoFetchAvatar('directNat')}
+                      disabled={isFetchingAvatar}
+                      className="px-2 py-0.5 bg-yellow-400 hover:bg-yellow-500 text-black font-black text-[10px] rounded border border-black shadow-[1px_1px_0px_#000] flex items-center gap-1 transition-transform active:scale-95"
+                    >
+                      <Sparkles className="w-3 h-3" />
+                      {isFetchingAvatar ? 'Fetching...' : '⚡ Auto-Fetch Avatar'}
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <img
+                      src={directNatForm.avatar_url || 'https://ui-avatars.com/api/?name=Creator&background=138808&color=fff&size=128'}
+                      alt="Preview"
+                      className="w-10 h-10 rounded-xl border border-black object-cover bg-gray-100 shrink-0"
+                      onError={(e) => {
+                        e.target.src = 'https://ui-avatars.com/api/?name=Creator&background=138808&color=fff&size=128';
+                      }}
+                    />
+                    <input
+                      type="url"
+                      placeholder="https://... (or click Auto-Fetch)"
+                      value={directNatForm.avatar_url || ''}
+                      onChange={(e) => setDirectNatForm({ ...directNatForm, avatar_url: e.target.value })}
+                      className="flex-1 px-3 py-1.5 bg-gray-50 border border-black rounded font-mono text-xs"
+                    />
+                  </div>
+                </div>
+
+                <div>
                   <label className="block font-black uppercase text-gray-700 mb-1">
                     Categories (Multi-Select: 1 or more) *
                   </label>
@@ -5305,6 +5545,38 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
                       value={directPropForm.handle_insta}
                       onChange={(e) => setDirectPropForm({ ...directPropForm, handle_insta: e.target.value })}
                       className="w-full px-2 py-1.5 bg-gray-50 border border-black rounded font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block font-black uppercase text-gray-700">Avatar / Profile Picture URL</label>
+                    <button
+                      type="button"
+                      onClick={() => handleAutoFetchAvatar('directProp')}
+                      disabled={isFetchingAvatar}
+                      className="px-2 py-0.5 bg-yellow-400 hover:bg-yellow-500 text-black font-black text-[10px] rounded border border-black shadow-[1px_1px_0px_#000] flex items-center gap-1 transition-transform active:scale-95"
+                    >
+                      <Sparkles className="w-3 h-3" />
+                      {isFetchingAvatar ? 'Fetching...' : '⚡ Auto-Fetch Avatar'}
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <img
+                      src={directPropForm.avatar_url || 'https://ui-avatars.com/api/?name=Propagandu&background=E1306C&color=fff&size=128'}
+                      alt="Preview"
+                      className="w-10 h-10 rounded-xl border border-black object-cover bg-gray-100 shrink-0"
+                      onError={(e) => {
+                        e.target.src = 'https://ui-avatars.com/api/?name=Propagandu&background=E1306C&color=fff&size=128';
+                      }}
+                    />
+                    <input
+                      type="url"
+                      placeholder="https://... (or click Auto-Fetch)"
+                      value={directPropForm.avatar_url || ''}
+                      onChange={(e) => setDirectPropForm({ ...directPropForm, avatar_url: e.target.value })}
+                      className="flex-1 px-3 py-1.5 bg-gray-50 border border-black rounded font-mono text-xs"
                     />
                   </div>
                 </div>

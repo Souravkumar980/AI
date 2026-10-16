@@ -617,11 +617,11 @@ function CreatorCard({ item, rank, rankBadge, rankRingColor, isUpvoted, onUpvote
             <div className="flex items-center gap-3">
               <div className="relative">
                 <img
-                  src={item.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(item.name)}`}
+                  src={item.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(item.name || 'Nationalist')}&background=138808&color=ffffff&size=256&bold=true`}
                   alt={item.name}
                   className={`w-14 h-14 rounded-2xl border-2 border-black object-cover shadow-[2px_2px_0px_#000] bg-white shrink-0 ${rankRingColor || ''}`}
                   onError={(e) => {
-                    e.target.src = `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(item.name)}`;
+                    e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(item.name || 'Nationalist')}&background=138808&color=ffffff&size=256&bold=true`;
                   }}
                 />
                 {rank === 1 && (

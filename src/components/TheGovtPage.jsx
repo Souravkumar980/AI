@@ -409,38 +409,49 @@ export default function TheGovtPage({ onOpenShareCard }) {
   const [voting, setVoting] = useState(false);
   const [voteToast, setVoteToast] = useState('');
 
-  useEffect(() => {
-    fetch('/api/govt-poll')
+  const fetchGovtPoll = () => {
+    const baseUrl = (typeof window !== 'undefined' && window.__API_BASE_URL__) ? window.__API_BASE_URL__.replace(/\/+$/, '') : '';
+    fetch(`${baseUrl}/api/govt-poll`)
       .then(res => res.json())
       .then(data => {
-        if (data && !data.error) setPollData(data);
+        if (data && !data.error) {
+          setPollData(prev => ({
+            ...prev,
+            ...data,
+            userVoted: data.userVoted !== undefined ? data.userVoted : prev.userVoted
+          }));
+        }
       })
       .catch(err => console.error('Failed to load govt poll:', err));
+  };
+
+  useEffect(() => {
+    fetchGovtPoll();
+    const interval = setInterval(fetchGovtPoll, 5000);
+    return () => clearInterval(interval);
   }, []);
 
   const handleCastVote = async (choice) => {
-    if (pollData.userVoted || voting) return;
+    if (voting) return;
     setVoting(true);
     try {
-      const res = await fetch('/api/govt-poll/vote', {
+      const baseUrl = (typeof window !== 'undefined' && window.__API_BASE_URL__) ? window.__API_BASE_URL__.replace(/\/+$/, '') : '';
+      const res = await fetch(`${baseUrl}/api/govt-poll/vote`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ choice })
       });
       const data = await res.json();
-      if (res.ok) {
-        setPollData(data);
+      if (res.ok && data) {
+        setPollData(prev => ({ ...prev, ...data, userVoted: choice }));
         setVoteToast(choice === 'yes' ? '🚩 Bharat Mata Ki Jai! Your YES vote is recorded.' : '⚠️ Your vote is recorded.');
         setTimeout(() => setVoteToast(''), 4500);
-      } else if (res.status === 409) {
-        setPollData(prev => ({ ...prev, userVoted: data.userVoted || choice }));
-        setVoteToast(data.error || 'You have already voted! 1 vote per IP enforced.');
-        setTimeout(() => setVoteToast(''), 4500);
       } else {
-        alert(data.error || 'Failed to submit vote');
+        setPollData(prev => ({ ...prev, userVoted: choice }));
       }
     } catch (err) {
       console.error(err);
+      setPollData(prev => ({ ...prev, userVoted: choice }));
     } finally {
       setVoting(false);
     }
@@ -1059,56 +1070,74 @@ export default function TheGovtPage({ onOpenShareCard }) {
             </div>
           )}
 
-          {/* Voting Buttons */}
+          {/* Voting Buttons (Switchable Yes/No) */}
           <div className="flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-4 mb-6">
             <button
               onClick={() => handleCastVote('yes')}
-              disabled={Boolean(pollData.userVoted) || voting}
+              disabled={voting}
               className={`w-full sm:w-56 min-h-[48px] py-3.5 px-6 rounded-2xl font-comic text-sm uppercase font-black tracking-wider flex items-center justify-center gap-2 border-3 border-black shadow-[4px_4px_0px_#000] transition-all cursor-pointer ${
                 pollData.userVoted === 'yes'
-                  ? 'bg-tirangaGreen text-white'
+                  ? 'bg-tirangaGreen text-white ring-4 ring-[#FFE600] -translate-y-0.5'
                   : 'bg-tirangaGreen/90 hover:bg-tirangaGreen text-white hover:-translate-y-0.5'
               }`}
             >
               <Check className="w-5 h-5" />
               <span>YES, VIKSIT BHARAT</span>
+              {pollData.userVoted === 'yes' && (
+                <span className="text-[10px] bg-black text-[#FFE600] px-2 py-0.5 rounded-full font-mono font-black border border-white">
+                  ✓ VOTED
+                </span>
+              )}
             </button>
 
             <button
               onClick={() => handleCastVote('no')}
-              disabled={Boolean(pollData.userVoted) || voting}
+              disabled={voting}
               className={`w-full sm:w-48 min-h-[48px] py-3.5 px-6 rounded-2xl font-comic text-sm uppercase font-black tracking-wider flex items-center justify-center gap-2 border-3 border-black shadow-[4px_4px_0px_#000] transition-all cursor-pointer ${
                 pollData.userVoted === 'no'
-                  ? 'bg-red-600 text-white'
+                  ? 'bg-red-600 text-white ring-4 ring-black -translate-y-0.5'
                   : 'bg-gray-100 hover:bg-gray-200 text-black hover:-translate-y-0.5'
               }`}
             >
               <XCircle className="w-5 h-5 text-red-600" />
               <span>NO</span>
+              {pollData.userVoted === 'no' && (
+                <span className="text-[10px] bg-black text-white px-2 py-0.5 rounded-full font-mono font-black border border-white">
+                  ✓ VOTED
+                </span>
+              )}
             </button>
           </div>
 
           {/* Progress Bar & Real-Time Stats */}
           <div className="max-w-md mx-auto">
-            <div className="w-full bg-gray-200 border-2 border-black rounded-full h-5 overflow-hidden flex shadow-inner mb-2">
-              <div
-                className="bg-tirangaGreen h-full transition-all duration-1000 flex items-center justify-center text-[10px] font-mono font-black text-white"
-                style={{ width: `${pollData.yesPercent || 90}%` }}
-              >
-                {pollData.yesPercent || 90}%
+            {(!pollData.totalVotes || pollData.totalVotes === 0) ? (
+              <div className="w-full bg-gray-200 border-2 border-black rounded-full h-6 overflow-hidden flex items-center justify-center shadow-inner mb-2 px-3">
+                <span className="text-[10px] font-mono font-bold text-gray-500 uppercase tracking-wider">
+                  0 Citizen Votes • Cast the first vote!
+                </span>
               </div>
-              <div
-                className="bg-red-500 h-full transition-all duration-1000 flex items-center justify-center text-[10px] font-mono font-black text-white"
-                style={{ width: `${pollData.noPercent || 10}%` }}
-              >
-                {pollData.noPercent || 10}%
+            ) : (
+              <div className="w-full bg-gray-200 border-2 border-black rounded-full h-6 overflow-hidden flex shadow-inner mb-2">
+                <div
+                  className="bg-tirangaGreen h-full transition-all duration-700 flex items-center justify-center text-[10px] font-mono font-black text-white px-1 truncate"
+                  style={{ width: `${pollData.yesPercent}%` }}
+                >
+                  {pollData.yesPercent > 12 ? `${pollData.yesPercent}% YES` : (pollData.yesPercent > 0 ? `${pollData.yesPercent}%` : '')}
+                </div>
+                <div
+                  className="bg-red-500 h-full transition-all duration-700 flex items-center justify-center text-[10px] font-mono font-black text-white px-1 truncate"
+                  style={{ width: `${pollData.noPercent}%` }}
+                >
+                  {pollData.noPercent > 12 ? `${pollData.noPercent}% NO` : (pollData.noPercent > 0 ? `${pollData.noPercent}%` : '')}
+                </div>
               </div>
-            </div>
+            )}
 
             <div className="flex items-center justify-between text-xs font-mono font-black text-gray-700">
-              <span className="text-tirangaGreen-dark">YES: {pollData.yesVotes?.toLocaleString()}</span>
-              <span>Total Votes: {pollData.totalVotes?.toLocaleString()}</span>
-              <span className="text-red-700">NO: {pollData.noVotes?.toLocaleString()}</span>
+              <span className="text-tirangaGreen-dark">YES: {pollData.yesVotes?.toLocaleString() || 0}</span>
+              <span>Total Votes: {pollData.totalVotes?.toLocaleString() || 0}</span>
+              <span className="text-red-700">NO: {pollData.noVotes?.toLocaleString() || 0}</span>
             </div>
           </div>
         </div>
