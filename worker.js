@@ -676,8 +676,23 @@ export default {
       });
     }
 
-    // Health Check Root (always public)
-    if (path === '/' || path === '/health' || path === '/api/health') {
+    // Health Check
+    if (path === '/health' || path === '/api/health') {
+      return new Response(JSON.stringify({
+        status: 'ONLINE',
+        platform: 'Cloudflare Worker',
+        shield: 'Sovereign Patriot Shield Active',
+        slogan: 'Bharat Mata ki Jai 🇮🇳',
+        timestamp: new Date().toISOString()
+      }), { headers: JSON_HEADERS });
+    }
+
+    // Serve static assets if running in Cloudflare Workers Assets mode
+    if (env?.ASSETS && !path.startsWith('/api') && path !== '/api.php') {
+      return env.ASSETS.fetch(request);
+    }
+
+    if (path === '/') {
       return new Response(JSON.stringify({
         status: 'ONLINE',
         platform: 'Cloudflare Worker',
