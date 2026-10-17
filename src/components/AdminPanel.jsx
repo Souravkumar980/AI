@@ -1425,11 +1425,15 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
       });
       if (res.ok) {
         showToast(`Entity "${name}" deleted.`);
+        setEntities(prev => prev.filter(e => String(e.id).trim() !== String(id).trim()));
         loadAllAdminData();
         if (onRefreshData) onRefreshData();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert(err.error || 'Delete failed');
       }
     } catch (e) {
-      alert('Delete failed');
+      alert('Delete failed: ' + e.message);
     }
   };
 
@@ -1664,11 +1668,15 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
       });
       if (res.ok) {
         showToast(`Deleted "${name}".`);
+        setNationalists(prev => prev.filter(n => String(n.id).trim() !== String(id).trim()));
         loadAllAdminData();
         if (onRefreshData) onRefreshData();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert(err.error || 'Delete failed');
       }
     } catch (e) {
-      alert('Delete failed');
+      alert('Delete failed: ' + e.message);
     }
   };
 

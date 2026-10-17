@@ -79,6 +79,8 @@ const memoryState = {
   reports: [],
   featureSuggestions: [],
   ratings: {}, // 'entity_id:ip' -> number (1-5)
+  deletedEntityIds: new Set(),
+  deletedNationalistIds: new Set(),
   nationalists: [
     {
       id: "nat-1792053208024-0ac2i5",
@@ -568,10 +570,15 @@ function broadcastSSE(data) {
 }
 
 // Helper: Verify administrator authorization token
-function isAuthorizedAdmin(request) {
-  const authHeader = request.headers.get('x-admin-key') || request.headers.get('authorization') || '';
-  let key = authHeader.trim();
+function isAuthorizedAdmin(request, url = null) {
+  let key = (request.headers.get('x-admin-key') || request.headers.get('authorization') || '').trim();
   if (key.startsWith('Bearer ')) key = key.slice(7).trim();
+  if (!key) {
+    try {
+      const u = url || new URL(request.url);
+      key = (u.searchParams.get('adminKey') || u.searchParams.get('admin_key') || u.searchParams.get('admin_token') || '').trim();
+    } catch (e) {}
+  }
   if (!key) return false;
   return (
     key === 'JaiHindBharatMataKiJai2024!' ||
@@ -589,6 +596,18 @@ async function forwardToInfinityFree(endpoint, method = 'GET', body = null, head
     targetUrl.searchParams.set('endpoint', cleanEp);
     targetUrl.searchParams.set('key', EP_CLIENT_KEY);
 
+    const m = method.toUpperCase();
+    let forwardMethod = m;
+    if (['PUT', 'PATCH', 'DELETE'].includes(m)) {
+      forwardMethod = 'POST';
+      targetUrl.searchParams.set('_method', m);
+    }
+
+    const adminKey = headers['x-admin-key'] || (headers['authorization'] ? headers['authorization'].replace(/^Bearer\s+/i, '') : '') || 'JaiHindBharatMataKiJai2024!';
+    if (adminKey) {
+      targetUrl.searchParams.set('adminKey', adminKey);
+    }
+
     const forwardHeaders = {
       'Content-Type': 'application/json',
       'X-App-Key': EP_CLIENT_KEY,
@@ -596,16 +615,23 @@ async function forwardToInfinityFree(endpoint, method = 'GET', body = null, head
       'User-Agent': 'ExposedPropagandus-Edge-Sync/2.0'
     };
 
-    if (headers['x-admin-key']) forwardHeaders['X-Admin-Key'] = headers['x-admin-key'];
-    if (headers['authorization']) forwardHeaders['Authorization'] = headers['authorization'];
+    if (adminKey) {
+      forwardHeaders['X-Admin-Key'] = adminKey;
+      forwardHeaders['Authorization'] = `Bearer ${adminKey}`;
+    }
+    if (['PUT', 'PATCH', 'DELETE'].includes(m)) {
+      forwardHeaders['X-HTTP-Method-Override'] = m;
+    }
 
     const options = {
-      method: method.toUpperCase(),
+      method: forwardMethod,
       headers: forwardHeaders
     };
 
-    if (body && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(options.method)) {
+    if (body) {
       options.body = typeof body === 'string' ? body : JSON.stringify(body);
+    } else if (forwardMethod === 'POST') {
+      options.body = JSON.stringify({ _method: m, _action: m.toLowerCase() });
     }
 
     const res = await fetch(targetUrl.toString(), options);
@@ -666,6 +692,13 @@ export default {
       }
     }
 
+    // Support method overrides via query (_method) or header (x-http-method-override)
+    const effectiveMethod = (
+      url.searchParams.get('_method') ||
+      request.headers.get('x-http-method-override') ||
+      request.method
+    ).toUpperCase();
+
     const clientIp = request.headers.get('cf-connecting-ip') || request.headers.get('x-forwarded-for') || '127.0.0.1';
 
     // 2. IP Blocking Verification
@@ -706,7 +739,7 @@ export default {
     // 🛡️ SOVEREIGN SHIELD: DIRECT ACCESS & INSPECTION INTERCEPTOR
     // =============================================================
     if (path.startsWith('/api')) {
-      const isAdmin = isAuthorizedAdmin(request);
+      const isAdmin = isAuthorizedAdmin(request, url);
       const isDirectNav = request.headers.get('sec-fetch-dest') === 'document' ||
                           request.headers.get('sec-fetch-mode') === 'navigate' ||
                           (request.headers.get('accept') || '').includes('text/html');
@@ -1103,6 +1136,16 @@ export default {
       }
     }
 
+    if (path.startsWith('/api/community/messages/') && !path.endsWith('/react') && (effectiveMethod === 'DELETE' || request.method === 'DELETE')) {
+      const msgId = path.replace('/api/community/messages/', '').replace(/\/$/, '').trim();
+      memoryState.messages = memoryState.messages.filter(m => String(m.id).trim() !== msgId);
+      broadcastSSE({ type: 'DELETE_MESSAGE', message_id: msgId });
+      if (ctx?.waitUntil) {
+        ctx.waitUntil(forwardToInfinityFree(path, 'DELETE', null, { 'x-admin-key': request.headers.get('x-admin-key') || '' }));
+      }
+      return new Response(JSON.stringify({ success: true, deletedId: msgId }), { headers: JSON_HEADERS });
+    }
+
     if (path === '/api/community/channels' && request.method === 'POST') {
       try {
         const body = await request.json();
@@ -1188,26 +1231,37 @@ export default {
     }
 
     // Community Admin controls
-    if (path === '/api/community/admin/verify-badge' && request.method === 'POST') {
-      if (!isAuthorizedAdmin(request)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
+    if (path === '/api/community/admin/verify-badge' && (effectiveMethod === 'POST' || request.method === 'POST')) {
+      if (!isAuthorizedAdmin(request, url)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
       const b = await request.json().catch(() => ({}));
       const user = memoryState.users.find(u => u.id === b.user_id);
       if (user) {
         user.verified_type = b.verified_type || 'none';
+        if (ctx?.waitUntil) {
+          ctx.waitUntil(forwardToInfinityFree(path, 'POST', b, { 'x-admin-key': request.headers.get('x-admin-key') || '' }));
+        }
         return new Response(JSON.stringify({ success: true, user }), { headers: JSON_HEADERS });
       }
       return new Response(JSON.stringify({ error: 'User not found' }), { status: 404, headers: JSON_HEADERS });
     }
 
-    if (path === '/api/community/admin/ban' && request.method === 'POST') {
-      if (!isAuthorizedAdmin(request)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
+    if (path === '/api/community/admin/ban' && (effectiveMethod === 'POST' || request.method === 'POST')) {
+      if (!isAuthorizedAdmin(request, url)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
       const b = await request.json().catch(() => ({}));
       const user = memoryState.users.find(u => u.id === b.user_id);
       if (user) {
         user.is_banned = b.is_banned ? 1 : 0;
-        return new Response(JSON.stringify({ success: true, user }), { headers: JSON_HEADERS });
       }
-      return new Response(JSON.stringify({ error: 'User not found' }), { status: 404, headers: JSON_HEADERS });
+      if (b.user_id) {
+        memoryState.messages = memoryState.messages.filter(m => m.user_id !== b.user_id);
+      }
+      if (b.ip_address) {
+        memoryState.blockedIps.add(b.ip_address);
+      }
+      if (ctx?.waitUntil) {
+        ctx.waitUntil(forwardToInfinityFree(path, 'POST', b, { 'x-admin-key': request.headers.get('x-admin-key') || '' }));
+      }
+      return new Response(JSON.stringify({ success: true, user }), { headers: JSON_HEADERS });
     }
 
     // -------------------------------------------------------------
@@ -1267,18 +1321,20 @@ export default {
     // -------------------------------------------------------------
     // GENERAL STATS & TRAFFIC
     // -------------------------------------------------------------
-    if (path === '/api/stats' && request.method === 'GET') {
-      const entCount = memoryState.entities.length;
-      const natCount = memoryState.nationalists.length;
+    if (path === '/api/stats' && (effectiveMethod === 'GET' || request.method === 'GET')) {
+      const activeEntities = memoryState.entities.filter(e => !memoryState.deletedEntityIds.has(String(e.id).trim()));
+      const activeNationalists = memoryState.nationalists.filter(n => !memoryState.deletedNationalistIds.has(String(n.id).trim()));
+      const entCount = activeEntities.length;
+      const natCount = activeNationalists.length;
       const repCount = memoryState.reports.length;
       const userCount = memoryState.users.length;
-      const totalVotes = memoryState.entities.reduce((sum, e) => sum + (e.upvotes || 0), 0) +
-                         memoryState.nationalists.reduce((sum, n) => sum + (n.upvotes || 0), 0);
+      const totalVotes = activeEntities.reduce((sum, e) => sum + (e.upvotes || 0), 0) +
+                         activeNationalists.reduce((sum, n) => sum + (n.upvotes || 0), 0);
 
       return new Response(JSON.stringify({
         totalEntities: entCount,
         totalExposed: entCount,
-        verifiedEntities: memoryState.entities.filter(e => e.is_verified).length,
+        verifiedEntities: activeEntities.filter(e => e.is_verified).length,
         totalNationalists: natCount,
         totalReports: repCount,
         pendingReports: memoryState.reports.filter(r => r.status === 'pending').length,
@@ -1446,8 +1502,8 @@ export default {
       }
     }
 
-    if (path === '/api/admin/govt-poll' && (request.method === 'PUT' || request.method === 'POST')) {
-      if (!isAuthorizedAdmin(request)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
+    if (path === '/api/admin/govt-poll' && (['PUT', 'POST'].includes(effectiveMethod) || ['PUT', 'POST'].includes(request.method))) {
+      if (!isAuthorizedAdmin(request, url)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
       const body = await request.json().catch(() => ({}));
       if (typeof body.yesVotes === 'number') memoryState.govtPoll.yesVotes = body.yesVotes;
       if (typeof body.noVotes === 'number') memoryState.govtPoll.noVotes = body.noVotes;
@@ -1461,12 +1517,12 @@ export default {
     // -------------------------------------------------------------
     // LIVE BULLETIN & ANNOUNCEMENTS
     // -------------------------------------------------------------
-    if (path === '/api/bulletin' && request.method === 'GET') {
+    if (path === '/api/bulletin' && (effectiveMethod === 'GET' || request.method === 'GET')) {
       return new Response(JSON.stringify(memoryState.bulletin), { headers: JSON_HEADERS });
     }
 
-    if (path === '/api/admin/bulletin' && (request.method === 'PUT' || request.method === 'POST')) {
-      if (!isAuthorizedAdmin(request)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
+    if (path === '/api/admin/bulletin' && (['PUT', 'POST'].includes(effectiveMethod) || ['PUT', 'POST'].includes(request.method))) {
+      if (!isAuthorizedAdmin(request, url)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
       const body = await request.json().catch(() => ({}));
       memoryState.bulletin = {
         is_active: body.is_active !== undefined ? (body.is_active ? 1 : 0) : 1,
@@ -1475,12 +1531,12 @@ export default {
       return new Response(JSON.stringify({ success: true, bulletin: memoryState.bulletin }), { headers: JSON_HEADERS });
     }
 
-    if (path === '/api/announcement' && request.method === 'GET') {
+    if (path === '/api/announcement' && (effectiveMethod === 'GET' || request.method === 'GET')) {
       return new Response(JSON.stringify({ announcement: memoryState.announcement }), { headers: JSON_HEADERS });
     }
 
-    if (path === '/api/admin/announcement' && request.method === 'POST') {
-      if (!isAuthorizedAdmin(request)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
+    if (path === '/api/admin/announcement' && (effectiveMethod === 'POST' || request.method === 'POST')) {
+      if (!isAuthorizedAdmin(request, url)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
       const body = await request.json().catch(() => ({}));
       memoryState.announcement = {
         is_active: 1,
@@ -1491,8 +1547,8 @@ export default {
       return new Response(JSON.stringify({ success: true, announcement: memoryState.announcement }), { headers: JSON_HEADERS });
     }
 
-    if (path === '/api/admin/announcement' && request.method === 'DELETE') {
-      if (!isAuthorizedAdmin(request)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
+    if (path === '/api/admin/announcement' && (effectiveMethod === 'DELETE' || request.method === 'DELETE')) {
+      if (!isAuthorizedAdmin(request, url)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
       memoryState.announcement.is_active = 0;
       return new Response(JSON.stringify({ success: true }), { headers: JSON_HEADERS });
     }
@@ -1548,8 +1604,8 @@ export default {
     }
 
     const adminRatingMatch = path.match(/^\/api\/admin\/entities\/([a-zA-Z0-9_-]+)\/rating$/);
-    if (adminRatingMatch && ['PATCH', 'POST', 'PUT'].includes(request.method)) {
-      if (!isAuthorizedAdmin(request)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
+    if (adminRatingMatch && (['PATCH', 'POST', 'PUT'].includes(effectiveMethod) || ['PATCH', 'POST', 'PUT'].includes(request.method))) {
+      if (!isAuthorizedAdmin(request, url)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
       const entId = adminRatingMatch[1];
       const body = await request.json().catch(() => ({}));
       const newAvg = Math.max(0.0, Math.min(5.0, parseFloat(body.rating_avg ?? body.rating ?? 0.0)));
@@ -1567,11 +1623,12 @@ export default {
     // -------------------------------------------------------------
     // PROPAGANDUS DATABASE (ENTITIES)
     // -------------------------------------------------------------
-    if (path === '/api/entities' && request.method === 'GET') {
-      return new Response(JSON.stringify(memoryState.entities), { headers: JSON_HEADERS });
+    if (path === '/api/entities' && (effectiveMethod === 'GET' || request.method === 'GET')) {
+      const activeEntities = memoryState.entities.filter(e => !memoryState.deletedEntityIds.has(e.id));
+      return new Response(JSON.stringify(activeEntities), { headers: JSON_HEADERS });
     }
 
-    if (path === '/api/entities' && request.method === 'POST') {
+    if (path === '/api/entities' && (effectiveMethod === 'POST' || request.method === 'POST')) {
       try {
         const body = await request.json().catch(() => ({}));
         const { name, handle_x, handle_yt, handle_insta, categories, party, institution, narrative, fact_check, proof_url, other_links, contact_phone, contact_email, _hp_security_check } = body;
@@ -1638,7 +1695,7 @@ export default {
       }
     }
 
-    if (path.startsWith('/api/entities/') && path.endsWith('/upvote') && request.method === 'POST') {
+    if (path.startsWith('/api/entities/') && path.endsWith('/upvote') && (effectiveMethod === 'POST' || request.method === 'POST')) {
       const entId = path.split('/')[3];
       const ent = memoryState.entities.find(e => e.id === entId);
       if (ent) {
@@ -1649,8 +1706,8 @@ export default {
     }
 
     // Admin Entities Management
-    if ((path === '/api/admin/entities' || path === '/api/admin/entities/direct') && request.method === 'POST') {
-      if (!isAuthorizedAdmin(request)) return new Response(JSON.stringify({ error: 'Unauthorized admin' }), { status: 401, headers: JSON_HEADERS });
+    if ((path === '/api/admin/entities' || path === '/api/admin/entities/direct') && (effectiveMethod === 'POST' || request.method === 'POST')) {
+      if (!isAuthorizedAdmin(request, url)) return new Response(JSON.stringify({ error: 'Unauthorized admin' }), { status: 401, headers: JSON_HEADERS });
       const b = await request.json().catch(() => ({}));
       const newEnt = {
         id: b.id || ('prop-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6)),
@@ -1676,12 +1733,13 @@ export default {
         updated_at: new Date().toISOString()
       };
 
-      const existingIdx = memoryState.entities.findIndex(e => e.id === newEnt.id);
+      const existingIdx = memoryState.entities.findIndex(e => String(e.id).trim() === String(newEnt.id).trim());
       if (existingIdx >= 0) {
         memoryState.entities[existingIdx] = { ...memoryState.entities[existingIdx], ...newEnt };
       } else {
         memoryState.entities.unshift(newEnt);
       }
+      memoryState.deletedEntityIds.delete(newEnt.id);
 
       if (ctx?.waitUntil) {
         ctx.waitUntil(forwardToInfinityFree(path, 'POST', b, { 'x-admin-key': request.headers.get('x-admin-key') || '' }));
@@ -1690,10 +1748,10 @@ export default {
       return new Response(JSON.stringify({ success: true, entity: newEnt }), { headers: JSON_HEADERS });
     }
 
-    if (path.startsWith('/api/admin/entities/') && path.endsWith('/verify') && request.method === 'POST') {
-      if (!isAuthorizedAdmin(request)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
+    if (path.startsWith('/api/admin/entities/') && path.endsWith('/verify') && (effectiveMethod === 'POST' || effectiveMethod === 'PATCH' || request.method === 'POST' || request.method === 'PATCH')) {
+      if (!isAuthorizedAdmin(request, url)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
       const id = path.split('/')[4];
-      const ent = memoryState.entities.find(e => e.id === id);
+      const ent = memoryState.entities.find(e => String(e.id).trim() === String(id).trim());
       if (ent) {
         ent.is_verified = ent.is_verified ? 0 : 1;
         return new Response(JSON.stringify({ success: true, is_verified: ent.is_verified }), { headers: JSON_HEADERS });
@@ -1701,22 +1759,48 @@ export default {
       return new Response(JSON.stringify({ error: 'Not found' }), { status: 404, headers: JSON_HEADERS });
     }
 
-    if (path.startsWith('/api/admin/entities/') && request.method === 'DELETE') {
-      if (!isAuthorizedAdmin(request)) return new Response(JSON.stringify({ error: 'Unauthorized admin' }), { status: 401, headers: JSON_HEADERS });
+    // Edit Existing Entity (PUT/PATCH)
+    if (path.startsWith('/api/admin/entities/') && !path.endsWith('/verify') && !path.endsWith('/rating') && (effectiveMethod === 'PUT' || effectiveMethod === 'PATCH' || request.method === 'PUT' || request.method === 'PATCH')) {
+      if (!isAuthorizedAdmin(request, url)) return new Response(JSON.stringify({ error: 'Unauthorized admin' }), { status: 401, headers: JSON_HEADERS });
       const id = path.split('/')[4];
-      memoryState.entities = memoryState.entities.filter(e => e.id !== id);
-      return new Response(JSON.stringify({ success: true }), { headers: JSON_HEADERS });
+      const b = await request.json().catch(() => ({}));
+      const ent = memoryState.entities.find(e => String(e.id).trim() === String(id).trim());
+      if (ent) {
+        Object.assign(ent, b);
+        ent.updated_at = new Date().toISOString();
+        if (ctx?.waitUntil) {
+          ctx.waitUntil(forwardToInfinityFree(path, 'PUT', b, { 'x-admin-key': request.headers.get('x-admin-key') || '' }));
+        }
+        return new Response(JSON.stringify({ success: true, entity: ent }), { headers: JSON_HEADERS });
+      }
+      return new Response(JSON.stringify({ error: 'Not found' }), { status: 404, headers: JSON_HEADERS });
+    }
+
+    // Delete Entity (DELETE or POST with _method=DELETE)
+    if (path.startsWith('/api/admin/entities/') && !path.endsWith('/verify') && !path.endsWith('/rating') && (effectiveMethod === 'DELETE' || request.method === 'DELETE')) {
+      if (!isAuthorizedAdmin(request, url)) return new Response(JSON.stringify({ error: 'Unauthorized admin' }), { status: 401, headers: JSON_HEADERS });
+      const id = path.split('/')[4];
+      const cleanId = String(id).trim();
+      memoryState.entities = memoryState.entities.filter(e => String(e.id).trim() !== cleanId);
+      memoryState.deletedEntityIds.add(cleanId);
+      for (const k of Object.keys(memoryState.ratings)) {
+        if (k.startsWith(`${cleanId}:`)) delete memoryState.ratings[k];
+      }
+      if (ctx?.waitUntil) {
+        ctx.waitUntil(forwardToInfinityFree(path, 'DELETE', null, { 'x-admin-key': request.headers.get('x-admin-key') || '' }));
+      }
+      return new Response(JSON.stringify({ success: true, deletedId: cleanId }), { headers: JSON_HEADERS });
     }
 
     // -------------------------------------------------------------
     // NATIONALIST INFLUENCERS DIRECTORY
     // -------------------------------------------------------------
-    if (path === '/api/nationalist-influencers' && request.method === 'GET') {
-      const approved = memoryState.nationalists.filter(n => n.status === 'approved');
+    if (path === '/api/nationalist-influencers' && (effectiveMethod === 'GET' || request.method === 'GET')) {
+      const approved = memoryState.nationalists.filter(n => n.status === 'approved' && !memoryState.deletedNationalistIds.has(String(n.id).trim()));
       return new Response(JSON.stringify(approved), { headers: JSON_HEADERS });
     }
 
-    if (path === '/api/nationalist-influencers/suggest' && request.method === 'POST') {
+    if (path === '/api/nationalist-influencers/suggest' && (effectiveMethod === 'POST' || request.method === 'POST')) {
       try {
         const body = await request.json().catch(() => ({}));
         const newNat = {
@@ -1747,7 +1831,7 @@ export default {
       }
     }
 
-    if (path.startsWith('/api/nationalist-influencers/') && path.endsWith('/upvote') && request.method === 'POST') {
+    if (path.startsWith('/api/nationalist-influencers/') && path.endsWith('/upvote') && (effectiveMethod === 'POST' || request.method === 'POST')) {
       const natId = path.split('/')[3];
       const nat = memoryState.nationalists.find(n => n.id === natId);
       if (nat) {
@@ -1757,13 +1841,14 @@ export default {
       return new Response(JSON.stringify({ success: true, upvotes: 1 }), { headers: JSON_HEADERS });
     }
 
-    if (path === '/api/admin/nationalist-influencers' && request.method === 'GET') {
-      if (!isAuthorizedAdmin(request)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
-      return new Response(JSON.stringify(memoryState.nationalists), { headers: JSON_HEADERS });
+    if (path === '/api/admin/nationalist-influencers' && (effectiveMethod === 'GET' || request.method === 'GET')) {
+      if (!isAuthorizedAdmin(request, url)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
+      const active = memoryState.nationalists.filter(n => !memoryState.deletedNationalistIds.has(String(n.id).trim()));
+      return new Response(JSON.stringify(active), { headers: JSON_HEADERS });
     }
 
-    if ((path === '/api/admin/nationalist-influencers' || path === '/api/admin/nationalist-influencers/direct') && request.method === 'POST') {
-      if (!isAuthorizedAdmin(request)) return new Response(JSON.stringify({ error: 'Unauthorized admin' }), { status: 401, headers: JSON_HEADERS });
+    if ((path === '/api/admin/nationalist-influencers' || path === '/api/admin/nationalist-influencers/direct') && (effectiveMethod === 'POST' || request.method === 'POST')) {
+      if (!isAuthorizedAdmin(request, url)) return new Response(JSON.stringify({ error: 'Unauthorized admin' }), { status: 401, headers: JSON_HEADERS });
       const b = await request.json().catch(() => ({}));
       const newNat = {
         id: b.id || ('nat-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6)),
@@ -1782,40 +1867,53 @@ export default {
         updated_at: new Date().toISOString()
       };
 
-      const existingIdx = memoryState.nationalists.findIndex(n => n.id === newNat.id);
+      const existingIdx = memoryState.nationalists.findIndex(n => String(n.id).trim() === String(newNat.id).trim());
       if (existingIdx >= 0) {
         memoryState.nationalists[existingIdx] = { ...memoryState.nationalists[existingIdx], ...newNat };
       } else {
         memoryState.nationalists.unshift(newNat);
       }
+      memoryState.deletedNationalistIds.delete(String(newNat.id).trim());
+
+      if (ctx?.waitUntil) {
+        ctx.waitUntil(forwardToInfinityFree(path, 'POST', b, { 'x-admin-key': request.headers.get('x-admin-key') || '' }));
+      }
 
       return new Response(JSON.stringify({ success: true, nationalist: newNat }), { headers: JSON_HEADERS });
     }
 
-    if (path.startsWith('/api/admin/nationalist-influencers/') && (request.method === 'PATCH' || request.method === 'PUT')) {
-      if (!isAuthorizedAdmin(request)) return new Response(JSON.stringify({ error: 'Unauthorized admin' }), { status: 401, headers: JSON_HEADERS });
-      const id = path.split('/')[4];
+    if (path.startsWith('/api/admin/nationalist-influencers/') && (effectiveMethod === 'PATCH' || effectiveMethod === 'PUT' || request.method === 'PATCH' || request.method === 'PUT')) {
+      if (!isAuthorizedAdmin(request, url)) return new Response(JSON.stringify({ error: 'Unauthorized admin' }), { status: 401, headers: JSON_HEADERS });
+      const id = path.replace('/api/admin/nationalist-influencers/', '').replace(/\/$/, '').trim();
       const b = await request.json().catch(() => ({}));
-      const nat = memoryState.nationalists.find(n => n.id === id);
+      const nat = memoryState.nationalists.find(n => String(n.id).trim() === String(id).trim());
       if (nat) {
         Object.assign(nat, b);
         nat.updated_at = new Date().toISOString();
+        if (ctx?.waitUntil) {
+          ctx.waitUntil(forwardToInfinityFree(path, effectiveMethod, b, { 'x-admin-key': request.headers.get('x-admin-key') || '' }));
+        }
         return new Response(JSON.stringify({ success: true, nationalist: nat }), { headers: JSON_HEADERS });
       }
       return new Response(JSON.stringify({ error: 'Not found' }), { status: 404, headers: JSON_HEADERS });
     }
 
-    if (path.startsWith('/api/admin/nationalist-influencers/') && request.method === 'DELETE') {
-      if (!isAuthorizedAdmin(request)) return new Response(JSON.stringify({ error: 'Unauthorized admin' }), { status: 401, headers: JSON_HEADERS });
-      const id = path.split('/')[4];
-      memoryState.nationalists = memoryState.nationalists.filter(n => n.id !== id);
-      return new Response(JSON.stringify({ success: true }), { headers: JSON_HEADERS });
+    if (path.startsWith('/api/admin/nationalist-influencers/') && (effectiveMethod === 'DELETE' || request.method === 'DELETE')) {
+      if (!isAuthorizedAdmin(request, url)) return new Response(JSON.stringify({ error: 'Unauthorized admin' }), { status: 401, headers: JSON_HEADERS });
+      const id = path.replace('/api/admin/nationalist-influencers/', '').replace(/\/$/, '').trim();
+      const cleanId = String(id).trim();
+      memoryState.nationalists = memoryState.nationalists.filter(n => String(n.id).trim() !== cleanId);
+      memoryState.deletedNationalistIds.add(cleanId);
+      if (ctx?.waitUntil) {
+        ctx.waitUntil(forwardToInfinityFree(path, 'DELETE', null, { 'x-admin-key': request.headers.get('x-admin-key') || '' }));
+      }
+      return new Response(JSON.stringify({ success: true, deletedId: cleanId }), { headers: JSON_HEADERS });
     }
 
     // -------------------------------------------------------------
     // SUGGEST UPDATES & FEATURES
     // -------------------------------------------------------------
-    if (path === '/api/feature-suggestions' && request.method === 'POST') {
+    if (path === '/api/feature-suggestions' && (effectiveMethod === 'POST' || request.method === 'POST')) {
       try {
         const body = await request.json().catch(() => ({}));
         const newSug = {
@@ -1845,30 +1943,33 @@ export default {
       }
     }
 
-    if (path === '/api/admin/feature-suggestions' && request.method === 'GET') {
-      if (!isAuthorizedAdmin(request)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
+    if (path === '/api/admin/feature-suggestions' && (effectiveMethod === 'GET' || request.method === 'GET')) {
+      if (!isAuthorizedAdmin(request, url)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
       return new Response(JSON.stringify(memoryState.featureSuggestions), { headers: JSON_HEADERS });
     }
 
-    if (path.startsWith('/api/admin/feature-suggestions/') && path.endsWith('/read') && request.method === 'POST') {
-      if (!isAuthorizedAdmin(request)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
-      const id = path.split('/')[4];
-      const sug = memoryState.featureSuggestions.find(s => s.id === id);
+    if (path.startsWith('/api/admin/feature-suggestions/') && path.endsWith('/read') && (effectiveMethod === 'POST' || request.method === 'POST')) {
+      if (!isAuthorizedAdmin(request, url)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
+      const id = path.replace('/api/admin/feature-suggestions/', '').replace('/read', '').replace(/\/$/, '').trim();
+      const sug = memoryState.featureSuggestions.find(s => String(s.id).trim() === String(id).trim());
       if (sug) sug.is_read = 1;
       return new Response(JSON.stringify({ success: true }), { headers: JSON_HEADERS });
     }
 
-    if (path.startsWith('/api/admin/feature-suggestions/') && request.method === 'DELETE') {
-      if (!isAuthorizedAdmin(request)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
-      const id = path.split('/')[4];
-      memoryState.featureSuggestions = memoryState.featureSuggestions.filter(s => s.id !== id);
-      return new Response(JSON.stringify({ success: true }), { headers: JSON_HEADERS });
+    if (path.startsWith('/api/admin/feature-suggestions/') && !path.endsWith('/read') && (effectiveMethod === 'DELETE' || request.method === 'DELETE')) {
+      if (!isAuthorizedAdmin(request, url)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
+      const id = path.replace('/api/admin/feature-suggestions/', '').replace(/\/$/, '').trim();
+      memoryState.featureSuggestions = memoryState.featureSuggestions.filter(s => String(s.id).trim() !== String(id).trim());
+      if (ctx?.waitUntil) {
+        ctx.waitUntil(forwardToInfinityFree(path, 'DELETE', null, { 'x-admin-key': request.headers.get('x-admin-key') || '' }));
+      }
+      return new Response(JSON.stringify({ success: true, deletedId: id }), { headers: JSON_HEADERS });
     }
 
     // -------------------------------------------------------------
     // REPORTS SYSTEM
     // -------------------------------------------------------------
-    if (path === '/api/reports' && request.method === 'POST') {
+    if (path === '/api/reports' && (effectiveMethod === 'POST' || request.method === 'POST')) {
       try {
         const body = await request.json().catch(() => ({}));
         const newRep = {
@@ -1888,16 +1989,16 @@ export default {
       }
     }
 
-    if (path === '/api/admin/reports' && request.method === 'GET') {
-      if (!isAuthorizedAdmin(request)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
+    if (path === '/api/admin/reports' && (effectiveMethod === 'GET' || request.method === 'GET')) {
+      if (!isAuthorizedAdmin(request, url)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
       return new Response(JSON.stringify(memoryState.reports), { headers: JSON_HEADERS });
     }
 
-    if (path.startsWith('/api/admin/reports/') && (request.method === 'PATCH' || request.method === 'PUT')) {
-      if (!isAuthorizedAdmin(request)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
-      const repId = path.split('/')[4];
+    if (path.startsWith('/api/admin/reports/') && (effectiveMethod === 'PATCH' || effectiveMethod === 'PUT' || request.method === 'PATCH' || request.method === 'PUT')) {
+      if (!isAuthorizedAdmin(request, url)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
+      const repId = path.replace('/api/admin/reports/', '').replace(/\/$/, '').trim();
       const body = await request.json().catch(() => ({}));
-      const rep = memoryState.reports.find(r => r.id === repId);
+      const rep = memoryState.reports.find(r => String(r.id).trim() === String(repId).trim());
       if (rep) {
         if (body.status) rep.status = body.status;
         return new Response(JSON.stringify({ success: true, report: rep }), { headers: JSON_HEADERS });
@@ -1908,7 +2009,7 @@ export default {
     // -------------------------------------------------------------
     // CATEGORIES, PLAYLIST, SPOTLIGHT, POSTS
     // -------------------------------------------------------------
-    if (path === '/api/categories' && request.method === 'GET') {
+    if (path === '/api/categories' && (effectiveMethod === 'GET' || request.method === 'GET')) {
       const type = url.searchParams.get('type');
       let cats = memoryState.categories;
       if (type) {
@@ -1921,12 +2022,12 @@ export default {
       return new Response(JSON.stringify(cats), { headers: JSON_HEADERS });
     }
 
-    if (path === '/api/admin/categories' && request.method === 'GET') {
+    if (path === '/api/admin/categories' && (effectiveMethod === 'GET' || request.method === 'GET')) {
       return new Response(JSON.stringify(memoryState.categories), { headers: JSON_HEADERS });
     }
 
-    if (path === '/api/admin/categories' && request.method === 'POST') {
-      if (!isAuthorizedAdmin(request)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
+    if (path === '/api/admin/categories' && (effectiveMethod === 'POST' || request.method === 'POST')) {
+      if (!isAuthorizedAdmin(request, url)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
       const b = await request.json().catch(() => ({}));
       const newCat = {
         id: 'cat_' + Date.now(),
@@ -1936,26 +2037,33 @@ export default {
         type: b.type || 'entity'
       };
       memoryState.categories.push(newCat);
+      if (ctx?.waitUntil) {
+        ctx.waitUntil(forwardToInfinityFree(path, 'POST', b, { 'x-admin-key': request.headers.get('x-admin-key') || '' }));
+      }
       return new Response(JSON.stringify({ success: true, category: newCat }), { headers: JSON_HEADERS });
     }
 
-    if (path.startsWith('/api/admin/categories/') && request.method === 'DELETE') {
-      if (!isAuthorizedAdmin(request)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
-      const id = path.split('/')[4];
-      memoryState.categories = memoryState.categories.filter(c => String(c.id) !== String(id));
-      return new Response(JSON.stringify({ success: true }), { headers: JSON_HEADERS });
+    if (path.startsWith('/api/admin/categories/') && (effectiveMethod === 'DELETE' || request.method === 'DELETE')) {
+      if (!isAuthorizedAdmin(request, url)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
+      const id = path.replace('/api/admin/categories/', '').replace(/\/$/, '').trim();
+      memoryState.categories = memoryState.categories.filter(c => String(c.id).trim() !== String(id).trim());
+      if (ctx?.waitUntil) {
+        ctx.waitUntil(forwardToInfinityFree(path, 'DELETE', null, { 'x-admin-key': request.headers.get('x-admin-key') || '' }));
+      }
+      return new Response(JSON.stringify({ success: true, deletedId: id }), { headers: JSON_HEADERS });
     }
 
-    if (path === '/api/playlist' && request.method === 'GET') {
+    if (path === '/api/playlist' && (effectiveMethod === 'GET' || request.method === 'GET')) {
       return new Response(JSON.stringify(memoryState.playlist.filter(p => p.is_active)), { headers: JSON_HEADERS });
     }
 
-    if (path === '/api/admin/playlist' && request.method === 'GET') {
+    if (path === '/api/admin/playlist' && (effectiveMethod === 'GET' || request.method === 'GET')) {
+      if (!isAuthorizedAdmin(request, url)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
       return new Response(JSON.stringify(memoryState.playlist), { headers: JSON_HEADERS });
     }
 
-    if (path === '/api/admin/playlist' && request.method === 'POST') {
-      if (!isAuthorizedAdmin(request)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
+    if (path === '/api/admin/playlist' && (effectiveMethod === 'POST' || request.method === 'POST')) {
+      if (!isAuthorizedAdmin(request, url)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
       const b = await request.json().catch(() => ({}));
       const newTrack = {
         id: 'track_' + Date.now(),
@@ -1966,13 +2074,16 @@ export default {
         is_active: 1
       };
       memoryState.playlist.push(newTrack);
+      if (ctx?.waitUntil) {
+        ctx.waitUntil(forwardToInfinityFree(path, 'POST', b, { 'x-admin-key': request.headers.get('x-admin-key') || '' }));
+      }
       return new Response(JSON.stringify({ success: true, track: newTrack }), { headers: JSON_HEADERS });
     }
 
-    if (path.startsWith('/api/admin/playlist/') && path.endsWith('/toggle') && request.method === 'POST') {
-      if (!isAuthorizedAdmin(request)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
-      const id = path.split('/')[4];
-      const track = memoryState.playlist.find(p => p.id === id);
+    if (path.startsWith('/api/admin/playlist/') && path.endsWith('/toggle') && (effectiveMethod === 'POST' || effectiveMethod === 'PATCH' || request.method === 'POST' || request.method === 'PATCH')) {
+      if (!isAuthorizedAdmin(request, url)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
+      const id = path.replace('/api/admin/playlist/', '').replace('/toggle', '').replace(/\/$/, '').trim();
+      const track = memoryState.playlist.find(p => String(p.id).trim() === String(id).trim());
       if (track) {
         track.is_active = track.is_active ? 0 : 1;
         return new Response(JSON.stringify({ success: true, is_active: track.is_active }), { headers: JSON_HEADERS });
@@ -1980,19 +2091,22 @@ export default {
       return new Response(JSON.stringify({ error: 'Track not found' }), { status: 404, headers: JSON_HEADERS });
     }
 
-    if (path.startsWith('/api/admin/playlist/') && request.method === 'DELETE') {
-      if (!isAuthorizedAdmin(request)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
-      const id = path.split('/')[4];
-      memoryState.playlist = memoryState.playlist.filter(p => p.id !== id);
-      return new Response(JSON.stringify({ success: true }), { headers: JSON_HEADERS });
+    if (path.startsWith('/api/admin/playlist/') && !path.endsWith('/toggle') && (effectiveMethod === 'DELETE' || request.method === 'DELETE')) {
+      if (!isAuthorizedAdmin(request, url)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
+      const id = path.replace('/api/admin/playlist/', '').replace(/\/$/, '').trim();
+      memoryState.playlist = memoryState.playlist.filter(p => String(p.id).trim() !== String(id).trim());
+      if (ctx?.waitUntil) {
+        ctx.waitUntil(forwardToInfinityFree(path, 'DELETE', null, { 'x-admin-key': request.headers.get('x-admin-key') || '' }));
+      }
+      return new Response(JSON.stringify({ success: true, deletedId: id }), { headers: JSON_HEADERS });
     }
 
-    if (path === '/api/spotlight' && request.method === 'GET') {
+    if (path === '/api/spotlight' && (effectiveMethod === 'GET' || request.method === 'GET')) {
       return new Response(JSON.stringify(memoryState.spotlight || { type: 'off' }), { headers: JSON_HEADERS });
     }
 
-    if (path === '/api/admin/spotlight' && (request.method === 'POST' || request.method === 'PUT')) {
-      if (!isAuthorizedAdmin(request)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
+    if (path === '/api/admin/spotlight' && (['POST', 'PUT'].includes(effectiveMethod) || ['POST', 'PUT'].includes(request.method))) {
+      if (!isAuthorizedAdmin(request, url)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
       const b = await request.json().catch(() => ({}));
       memoryState.spotlight = {
         type: ['video', 'image', 'off'].includes(b.type) ? b.type : 'off',
@@ -2007,11 +2121,11 @@ export default {
       return new Response(JSON.stringify({ success: true, spotlight: memoryState.spotlight }), { headers: JSON_HEADERS });
     }
 
-    if (path === '/api/posts' && request.method === 'GET') {
+    if (path === '/api/posts' && (effectiveMethod === 'GET' || request.method === 'GET')) {
       return new Response(JSON.stringify(memoryState.posts), { headers: JSON_HEADERS });
     }
 
-    if (path.startsWith('/api/posts/') && path.endsWith('/like') && request.method === 'POST') {
+    if (path.startsWith('/api/posts/') && path.endsWith('/like') && (effectiveMethod === 'POST' || request.method === 'POST')) {
       const parts = path.split('/');
       const id = parts[3];
       const post = memoryState.posts.find(p => p.id === id);
@@ -2022,13 +2136,13 @@ export default {
       return new Response(JSON.stringify({ error: 'Post not found' }), { status: 404, headers: JSON_HEADERS });
     }
 
-    if (path === '/api/admin/posts' && request.method === 'GET') {
-      if (!isAuthorizedAdmin(request)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
+    if (path === '/api/admin/posts' && (effectiveMethod === 'GET' || request.method === 'GET')) {
+      if (!isAuthorizedAdmin(request, url)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
       return new Response(JSON.stringify(memoryState.posts), { headers: JSON_HEADERS });
     }
 
-    if (path === '/api/admin/posts' && request.method === 'POST') {
-      if (!isAuthorizedAdmin(request)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
+    if (path === '/api/admin/posts' && (effectiveMethod === 'POST' || request.method === 'POST')) {
+      if (!isAuthorizedAdmin(request, url)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
       try {
         const body = await request.json().catch(() => ({}));
         const newPost = {
@@ -2044,17 +2158,23 @@ export default {
           updated_at: new Date().toISOString()
         };
         memoryState.posts.unshift(newPost);
+        if (ctx?.waitUntil) {
+          ctx.waitUntil(forwardToInfinityFree(path, 'POST', body, { 'x-admin-key': request.headers.get('x-admin-key') || '' }));
+        }
         return new Response(JSON.stringify({ success: true, post: newPost }), { headers: JSON_HEADERS });
       } catch (err) {
         return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: JSON_HEADERS });
       }
     }
 
-    if (path.startsWith('/api/admin/posts/') && request.method === 'DELETE') {
-      if (!isAuthorizedAdmin(request)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
-      const id = path.replace('/api/admin/posts/', '').trim();
-      memoryState.posts = memoryState.posts.filter(p => p.id !== id);
-      return new Response(JSON.stringify({ success: true }), { headers: JSON_HEADERS });
+    if (path.startsWith('/api/admin/posts/') && (effectiveMethod === 'DELETE' || request.method === 'DELETE')) {
+      if (!isAuthorizedAdmin(request, url)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
+      const id = path.replace('/api/admin/posts/', '').replace(/\/$/, '').trim();
+      memoryState.posts = memoryState.posts.filter(p => String(p.id).trim() !== String(id).trim());
+      if (ctx?.waitUntil) {
+        ctx.waitUntil(forwardToInfinityFree(path, 'DELETE', null, { 'x-admin-key': request.headers.get('x-admin-key') || '' }));
+      }
+      return new Response(JSON.stringify({ success: true, deletedId: id }), { headers: JSON_HEADERS });
     }
 
     // -------------------------------------------------------------
@@ -2100,18 +2220,28 @@ export default {
       return new Response(JSON.stringify(memoryState.shieldAttempts), { headers: JSON_HEADERS });
     }
 
-    if ((path === '/api/admin/security/block' || path === '/api/admin/block-ip') && request.method === 'POST') {
-      if (!isAuthorizedAdmin(request)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
+    if ((path === '/api/admin/security/block' || path === '/api/admin/block-ip') && (effectiveMethod === 'POST' || request.method === 'POST')) {
+      if (!isAuthorizedAdmin(request, url)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
       const b = await request.json().catch(() => ({}));
-      if (b.ip) memoryState.blockedIps.add(b.ip);
+      if (b.ip) {
+        memoryState.blockedIps.add(b.ip);
+        if (ctx?.waitUntil) {
+          ctx.waitUntil(forwardToInfinityFree('/api/admin/block-ip', 'POST', b, { 'x-admin-key': request.headers.get('x-admin-key') || '' }));
+        }
+      }
       return new Response(JSON.stringify({ success: true }), { headers: JSON_HEADERS });
     }
 
-    if ((path === '/api/admin/security/unblock' || path.startsWith('/api/admin/block-ip/')) && (request.method === 'POST' || request.method === 'DELETE')) {
-      if (!isAuthorizedAdmin(request)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
+    if ((path === '/api/admin/security/unblock' || path.startsWith('/api/admin/block-ip/')) && (effectiveMethod === 'POST' || effectiveMethod === 'DELETE' || request.method === 'POST' || request.method === 'DELETE')) {
+      if (!isAuthorizedAdmin(request, url)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
       const b = await request.json().catch(() => ({}));
-      const ip = b.ip || path.split('/')[4];
-      if (ip) memoryState.blockedIps.delete(ip);
+      const ip = b.ip || decodeURIComponent(path.replace('/api/admin/block-ip/', '').replace(/\/$/, '')).trim();
+      if (ip) {
+        memoryState.blockedIps.delete(ip);
+        if (ctx?.waitUntil) {
+          ctx.waitUntil(forwardToInfinityFree(`/api/admin/block-ip/${encodeURIComponent(ip)}`, 'DELETE', null, { 'x-admin-key': request.headers.get('x-admin-key') || '' }));
+        }
+      }
       return new Response(JSON.stringify({ success: true }), { headers: JSON_HEADERS });
     }
 
@@ -2124,8 +2254,8 @@ export default {
       }), { headers: JSON_HEADERS });
     }
 
-    if (path === '/api/admin/credentials' && (request.method === 'PUT' || request.method === 'POST')) {
-      if (!isAuthorizedAdmin(request)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
+    if (path === '/api/admin/credentials' && (['PUT', 'POST'].includes(effectiveMethod) || ['PUT', 'POST'].includes(request.method))) {
+      if (!isAuthorizedAdmin(request, url)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
       return new Response(JSON.stringify({ success: true, message: 'Admin credentials maintained under sovereign lock.' }), { headers: JSON_HEADERS });
     }
 
