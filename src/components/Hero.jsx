@@ -118,7 +118,7 @@ export default function Hero({ onOpenSubmit, stats }) {
                 <Users className="w-4 h-4 text-saffron-dark" />
               </div>
               <div className="font-comic text-4xl sm:text-5xl text-black">
-                {stats?.totalEntities || 5}
+                {stats?.totalEntities ?? 0}
               </div>
               <div className="text-[11px] text-gray-500 font-bold mt-1">
                 Crowdsourced entries across socials

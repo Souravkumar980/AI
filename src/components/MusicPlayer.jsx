@@ -21,36 +21,23 @@ export function getSafeThumbnail(thumbnailUrl, videoId) {
   return thumbnailUrl;
 }
 
-// Default fallback tracks with verified YouTube IDs and guaranteed HQ thumbnails
-const DEFAULT_TRACKS = [
-  {
-    id: 'track-1',
-    title: 'Aarambh Hai Prachand (आरंभ है प्रचंड)',
-    video_id: 'gg1tN-gkcwk',
-    author: 'Piyush Mishra',
-    thumbnail_url: 'https://i.ytimg.com/vi/gg1tN-gkcwk/hqdefault.jpg',
-    duration: '4:46'
-  },
-  {
-    id: 'track-2',
-    title: 'Teri Mitti - Kesari | Akshay Kumar',
-    video_id: 'wF_B_aagLfI',
-    author: 'B Praak',
-    thumbnail_url: 'https://i.ytimg.com/vi/wF_B_aagLfI/hqdefault.jpg',
-    duration: '5:14'
-  },
-  {
-    id: 'track-3',
-    title: 'Maa Tujhe Salaam - Vande Mataram',
-    video_id: 'jDn2bn7_YSM',
-    author: 'A.R. Rahman',
-    thumbnail_url: 'https://i.ytimg.com/vi/jDn2bn7_YSM/hqdefault.jpg',
-    duration: '4:44'
+// Robust YouTube Video ID extractor
+export function getVideoId(track) {
+  if (!track) return '';
+  if (track.video_id) return track.video_id;
+  if (track.videoId) return track.videoId;
+  const raw = track.url || track.audio_url || track.audioUrl || '';
+  if (typeof raw === 'string') {
+    const clean = raw.trim();
+    if (/^[\w-]{11}$/.test(clean)) return clean;
+    const match = clean.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|v\/|shorts\/))([\w-]{11})/);
+    if (match) return match[1];
   }
-];
+  return '';
+}
 
 export function MusicPlayerProvider({ children }) {
-  const [playlist, setPlaylist] = useState(DEFAULT_TRACKS);
+  const [playlist, setPlaylist] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
@@ -63,9 +50,9 @@ export function MusicPlayerProvider({ children }) {
 
   // Live refs to prevent stale closure state
   const currentIndexRef = useRef(0);
-  const currentVideoIdRef = useRef(DEFAULT_TRACKS[0]?.video_id || 'gg1tN-gkcwk');
+  const currentVideoIdRef = useRef('');
   const isPlayingRef = useRef(false);
-  const playlistRef = useRef(DEFAULT_TRACKS);
+  const playlistRef = useRef([]);
 
   useEffect(() => {
     currentIndexRef.current = currentIndex;
@@ -233,7 +220,9 @@ export function MusicPlayerProvider({ children }) {
 
   const initPlayer = () => {
     if (playerRef.current) return;
-    const initialVideoId = playlistRef.current[0]?.video_id || currentVideoIdRef.current || 'gg1tN-gkcwk';
+    const initialTrack = playlistRef.current[0];
+    const initialVideoId = getVideoId(initialTrack) || currentVideoIdRef.current || '';
+    if (!initialVideoId) return;
     currentVideoIdRef.current = initialVideoId;
 
     try {
@@ -281,7 +270,7 @@ export function MusicPlayerProvider({ children }) {
     }
   };
 
-  const currentTrack = playlist[currentIndex] || playlist[0] || DEFAULT_TRACKS[0];
+  const currentTrack = playlist[currentIndex] || playlist[0] || null;
 
   // Helper to pick next random track without repeating until the entire playlist has ended
   const pickNextRandomIndex = (currentList, currentIdx) => {
@@ -332,16 +321,24 @@ export function MusicPlayerProvider({ children }) {
 
     const track = playlist[index];
     if (!track) return;
-    const key = track?.id || track?.video_id || `idx-${index}`;
+    const vId = getVideoId(track);
+    if (!vId) return;
+
+    const key = track?.id || vId || `idx-${index}`;
     playedTrackIdsRef.current.add(key);
 
     setCurrentIndex(index);
     currentIndexRef.current = index;
-    currentVideoIdRef.current = track.video_id;
+    currentVideoIdRef.current = vId;
+
+    if (!playerRef.current) {
+      initPlayer();
+      return;
+    }
 
     if (playerRef.current && typeof playerRef.current.loadVideoById === 'function') {
       try {
-        playerRef.current.loadVideoById(track.video_id);
+        playerRef.current.loadVideoById(vId);
         playerRef.current.playVideo();
         setIsPlaying(true);
         isPlayingRef.current = true;
@@ -350,6 +347,11 @@ export function MusicPlayerProvider({ children }) {
   };
 
   const togglePlay = () => {
+    if (playlist.length === 0) return;
+    const curTrack = playlist[currentIndex] || playlist[0];
+    const vId = getVideoId(curTrack);
+    if (!vId) return;
+
     if (!playerRef.current) {
       initPlayer();
       return;
@@ -519,11 +521,12 @@ function PlaylistModal({
         <div className="bg-gradient-to-r from-amber-50 via-orange-50 to-amber-50 border-b-2 border-black p-4 flex items-center gap-3">
           <div className="relative shrink-0">
             <img
-              src={getSafeThumbnail(currentTrack?.thumbnail_url, currentTrack?.video_id)}
+              src={getSafeThumbnail(currentTrack?.thumbnail_url, getVideoId(currentTrack))}
               alt="Track thumbnail"
               onError={(e) => {
                 e.currentTarget.onerror = null;
-                e.currentTarget.src = `https://i.ytimg.com/vi/${currentTrack?.video_id}/hqdefault.jpg`;
+                const vId = getVideoId(currentTrack);
+                if (vId) e.currentTarget.src = `https://i.ytimg.com/vi/${vId}/hqdefault.jpg`;
               }}
               className="w-16 h-12 object-cover rounded-xl border-2 border-black shadow-sm bg-black"
             />
@@ -547,10 +550,10 @@ function PlaylistModal({
               )}
             </div>
             <h4 className="font-comic text-sm text-black truncate leading-tight">
-              {isPlaying ? `DHUN #${currentIndex + 1} • PATRIOTIC MUSIC` : 'PATRIOTIC MUSIC STREAM'}
+              {currentTrack?.title ? currentTrack.title : (isPlaying ? `DHUN #${currentIndex + 1} • PATRIOTIC MUSIC` : 'PATRIOTIC MUSIC STREAM')}
             </h4>
             <p className="text-[11px] text-gray-600 font-mono truncate">
-              Continuous background audio • Auto-advances across pages
+              {currentTrack?.author || 'Continuous background audio • Auto-advances across pages'}
             </p>
           </div>
 
@@ -589,49 +592,55 @@ function PlaylistModal({
 
         {/* Playlist Scrollable Items */}
         <div className="max-h-[360px] overflow-y-auto p-3 space-y-2 font-display divide-y divide-gray-100">
-          {playlist.map((track, idx) => {
-            const isCurrent = idx === currentIndex;
-            return (
-              <div
-                key={track.id || track.video_id || idx}
-                onClick={() => onPlayTrack(idx)}
-                className={`pt-2 flex items-center justify-between p-2.5 rounded-xl border-2 transition-all cursor-pointer ${
-                  isCurrent
-                    ? 'bg-amber-50 border-black shadow-[3px_3px_0px_#000] -translate-y-0.5'
-                    : 'bg-white border-transparent hover:border-black/30 hover:bg-gray-50'
-                }`}
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  {/* Track Number / Playing indicator */}
-                  <div className="w-6 text-center font-mono font-black text-xs shrink-0">
-                    {isCurrent && isPlaying ? (
-                      <span className="text-saffron-dark font-black">▶</span>
-                    ) : (
-                      <span className="text-gray-400">#{idx + 1}</span>
-                    )}
-                  </div>
+          {playlist.length === 0 ? (
+            <div className="py-12 text-center text-xs font-mono text-gray-500">
+              No active songs in playlist. Admin can add songs via Admin Panel.
+            </div>
+          ) : (
+            playlist.map((track, idx) => {
+              const isCurrent = idx === currentIndex;
+              const vId = getVideoId(track);
+              return (
+                <div
+                  key={track.id || vId || idx}
+                  onClick={() => onPlayTrack(idx)}
+                  className={`pt-2 flex items-center justify-between p-2.5 rounded-xl border-2 transition-all cursor-pointer ${
+                    isCurrent
+                      ? 'bg-amber-50 border-black shadow-[3px_3px_0px_#000] -translate-y-0.5'
+                      : 'bg-white border-transparent hover:border-black/30 hover:bg-gray-50'
+                  }`}
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    {/* Track Number / Playing indicator */}
+                    <div className="w-6 text-center font-mono font-black text-xs shrink-0">
+                      {isCurrent && isPlaying ? (
+                        <span className="text-saffron-dark font-black">▶</span>
+                      ) : (
+                        <span className="text-gray-400">#{idx + 1}</span>
+                      )}
+                    </div>
 
-                  {/* High Quality Thumbnail with Fallback */}
-                  <img
-                    src={getSafeThumbnail(track.thumbnail_url, track.video_id)}
-                    alt=""
-                    onError={(e) => {
-                      e.currentTarget.onerror = null;
-                      e.currentTarget.src = `https://i.ytimg.com/vi/${track.video_id}/hqdefault.jpg`;
-                    }}
-                    className="w-12 h-9 object-cover rounded-lg border border-black/40 bg-black shrink-0"
-                  />
+                    {/* High Quality Thumbnail with Fallback */}
+                    <img
+                      src={getSafeThumbnail(track.thumbnail_url, vId)}
+                      alt=""
+                      onError={(e) => {
+                        e.currentTarget.onerror = null;
+                        if (vId) e.currentTarget.src = `https://i.ytimg.com/vi/${vId}/hqdefault.jpg`;
+                      }}
+                      className="w-12 h-9 object-cover rounded-lg border border-black/40 bg-black shrink-0"
+                    />
 
-                  {/* Title & Artist */}
-                  <div className="min-w-0">
-                    <p className={`font-comic text-xs truncate ${isCurrent ? 'text-black font-black' : 'text-gray-800'}`}>
-                      {track.title}
-                    </p>
-                    <p className="text-[10px] text-gray-500 font-mono truncate">
-                      {track.author || 'Nationalist Track'}
-                    </p>
+                    {/* Title & Artist */}
+                    <div className="min-w-0">
+                      <p className={`font-comic text-xs truncate ${isCurrent ? 'text-black font-black' : 'text-gray-800'}`}>
+                        {track.title}
+                      </p>
+                      <p className="text-[10px] text-gray-500 font-mono truncate">
+                        {track.author || 'Nationalist Track'}
+                      </p>
+                    </div>
                   </div>
-                </div>
 
                 {/* Duration & Play button */}
                 <div className="flex items-center gap-2 shrink-0 ml-2">
@@ -659,8 +668,9 @@ function PlaylistModal({
                 </div>
               </div>
             );
-          })}
-        </div>
+          })
+        )}
+      </div>
 
         {/* Footer info note */}
         <div className="bg-gray-50 px-4 py-2 border-t-2 border-black flex items-center justify-between text-[10px] font-mono font-bold text-gray-600">

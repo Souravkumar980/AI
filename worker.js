@@ -77,24 +77,7 @@ const memoryState = {
     { id: 'cat_9', name: 'Journalist', description: 'Investigative Nationalist Journalism', color: '#ec4899', type: 'nationalist' },
     { id: 'cat_10', name: 'Sanatan Dharma', description: 'Dharmic Culture and Heritage', color: '#eab308', type: 'nationalist' }
   ],
-  playlist: [
-    {
-      id: 'track_1',
-      title: 'Vande Mataram',
-      artist: 'Sovereign Voices',
-      audio_url: '/sounds/sound_5.mp3',
-      duration: '3:15',
-      is_active: 1
-    },
-    {
-      id: 'track_2',
-      title: 'Bharat Mata ki Jai',
-      artist: 'Patriot Anthem',
-      audio_url: '/sounds/sound_8.mp3',
-      duration: '2:45',
-      is_active: 1
-    }
-  ],
+  playlist: [],
   posts: [],
   govtPoll: {
     yesVotes: 1420,
@@ -350,11 +333,18 @@ async function searchYoutube(query) {
   return [];
 }
 
+// Extract 11-char YouTube Video ID from any URL or raw ID
+function extractYoutubeVideoId(input) {
+  if (!input || typeof input !== 'string') return '';
+  const clean = input.trim();
+  if (/^[\w-]{11}$/.test(clean)) return clean;
+  const match = clean.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|v\/|shorts\/))([\w-]{11})/);
+  return match ? match[1] : '';
+}
+
 // Get YouTube Video Details
 async function getYoutubeVideoDetails(videoUrlOrId) {
-  let videoId = videoUrlOrId;
-  const match = videoUrlOrId.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|v\/|shorts\/))([\w-]{11})/);
-  if (match) videoId = match[1];
+  let videoId = extractYoutubeVideoId(videoUrlOrId) || videoUrlOrId;
 
   try {
     const oembedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent('https://www.youtube.com/watch?v=' + videoId)}&format=json`;
@@ -722,6 +712,14 @@ class CloudflareDataStore {
 
     if (this.d1) {
       try {
+        const catStr = Array.isArray(entity.categories)
+          ? entity.categories.join(', ')
+          : String(entity.categories || 'General Disinformation');
+
+        const linksStr = typeof entity.other_links === 'string'
+          ? entity.other_links
+          : JSON.stringify(entity.other_links || entity.evidenceLinks || []);
+
         await this.d1.prepare(`
           INSERT INTO entities (id, name, handle_x, handle_yt, handle_insta, contact_phone, contact_email, other_links, avatar_url, categories, party, institution, narrative, fact_check, proof_url, upvotes, rating_avg, rating_count, is_verified, submitted_by_ip, created_at, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -746,12 +744,28 @@ class CloudflareDataStore {
             is_verified = excluded.is_verified,
             updated_at = excluded.updated_at
         `).bind(
-          entity.id, entity.name, entity.handle_x || '', entity.handle_yt || '', entity.handle_insta || '',
-          entity.contact_phone || '', entity.contact_email || '', typeof entity.other_links === 'string' ? entity.other_links : JSON.stringify(entity.other_links || []),
-          entity.avatar_url || '', entity.categories || '', entity.party || null, entity.institution || null,
-          entity.narrative || '', entity.fact_check || null, entity.proof_url || null,
-          entity.upvotes || 1, entity.rating_avg || 5.0, entity.rating_count || 1, entity.is_verified || 0,
-          entity.submitted_by_ip || '', entity.created_at || new Date().toISOString(), entity.updated_at || new Date().toISOString()
+          cleanId,
+          String(entity.name || 'Unnamed').trim(),
+          String(entity.handle_x || ''),
+          String(entity.handle_yt || ''),
+          String(entity.handle_insta || ''),
+          String(entity.contact_phone || ''),
+          String(entity.contact_email || ''),
+          linksStr,
+          String(entity.avatar_url || ''),
+          catStr,
+          entity.party ? String(entity.party) : null,
+          entity.institution ? String(entity.institution) : null,
+          String(entity.narrative || 'Documented narrative').trim(),
+          entity.fact_check ? String(entity.fact_check) : null,
+          entity.proof_url ? String(entity.proof_url) : null,
+          parseInt(entity.upvotes || 0, 10),
+          parseFloat(entity.rating_avg ?? 5.0),
+          parseInt(entity.rating_count ?? 1, 10),
+          entity.is_verified ? 1 : 0,
+          String(entity.submitted_by_ip || ''),
+          entity.created_at || new Date().toISOString(),
+          entity.updated_at || new Date().toISOString()
         ).run();
       } catch (err) {
         console.error('D1 addEntity error:', err);
@@ -783,7 +797,17 @@ class CloudflareDataStore {
         for (const [k, v] of Object.entries(updates)) {
           if (k !== 'id') {
             fields.push(`${k} = ?`);
-            values.push(typeof v === 'object' && v !== null ? JSON.stringify(v) : v);
+            if (k === 'categories' && Array.isArray(v)) {
+              values.push(v.join(', '));
+            } else if (typeof v === 'object' && v !== null) {
+              values.push(JSON.stringify(v));
+            } else if (typeof v === 'boolean') {
+              values.push(v ? 1 : 0);
+            } else if (typeof v === 'number') {
+              values.push(v);
+            } else {
+              values.push(v === undefined || v === null ? null : String(v));
+            }
           }
         }
         if (fields.length > 0) {
@@ -1026,17 +1050,25 @@ class CloudflareDataStore {
   }
 
   async addNationalist(nat) {
-    const cleanId = String(nat.id).trim();
+    const cleanId = String(nat.id || ('nat-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6))).trim();
     const existingIdx = memoryState.nationalists.findIndex(n => String(n.id).trim() === cleanId);
     if (existingIdx >= 0) {
-      memoryState.nationalists[existingIdx] = { ...memoryState.nationalists[existingIdx], ...nat };
+      memoryState.nationalists[existingIdx] = { ...memoryState.nationalists[existingIdx], ...nat, id: cleanId };
     } else {
-      memoryState.nationalists.unshift(nat);
+      memoryState.nationalists.unshift({ ...nat, id: cleanId });
     }
     memoryState.deletedNationalistIds.delete(cleanId);
 
     if (this.d1) {
       try {
+        const catStr = Array.isArray(nat.categories)
+          ? nat.categories.join(', ')
+          : String(nat.categories || nat.category || 'Nationalist Creator');
+
+        const linksStr = typeof nat.other_links === 'string'
+          ? nat.other_links
+          : JSON.stringify(nat.other_links || []);
+
         await this.d1.prepare(`
           INSERT INTO nationalist_influencers (id, name, handle_x, handle_yt, handle_insta, other_links, avatar_url, category, categories, description, status, is_verified, upvotes, suggested_by_ip, created_at, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -1055,11 +1087,22 @@ class CloudflareDataStore {
             upvotes = excluded.upvotes,
             updated_at = excluded.updated_at
         `).bind(
-          nat.id, nat.name, nat.handle_x || '', nat.handle_yt || '', nat.handle_insta || '',
-          nat.other_links || '', nat.avatar_url || '', nat.category || 'Nationalist Creator',
-          nat.categories || '', nat.description || '', nat.status || 'approved',
-          nat.is_verified || 1, nat.upvotes || 1, nat.suggested_by_ip || '',
-          nat.created_at || new Date().toISOString(), nat.updated_at || new Date().toISOString()
+          cleanId,
+          String(nat.name || 'Unnamed Patriot').trim(),
+          String(nat.handle_x || ''),
+          String(nat.handle_yt || ''),
+          String(nat.handle_insta || ''),
+          linksStr,
+          String(nat.avatar_url || ''),
+          String(nat.category || (Array.isArray(nat.categories) ? nat.categories[0] : 'Nationalist Creator')),
+          catStr,
+          String(nat.description || 'Patriotic Voice of Bharat').trim(),
+          String(nat.status || 'approved'),
+          nat.is_verified ? 1 : 0,
+          parseInt(nat.upvotes || 0, 10),
+          String(nat.suggested_by_ip || ''),
+          nat.created_at || new Date().toISOString(),
+          nat.updated_at || new Date().toISOString()
         ).run();
       } catch (e) {
         console.error('D1 addNationalist error:', e);
@@ -1091,7 +1134,17 @@ class CloudflareDataStore {
         for (const [k, v] of Object.entries(updates)) {
           if (k !== 'id') {
             fields.push(`${k} = ?`);
-            values.push(typeof v === 'object' && v !== null ? JSON.stringify(v) : v);
+            if (k === 'categories' && Array.isArray(v)) {
+              values.push(v.join(', '));
+            } else if (typeof v === 'object' && v !== null) {
+              values.push(JSON.stringify(v));
+            } else if (typeof v === 'boolean') {
+              values.push(v ? 1 : 0);
+            } else if (typeof v === 'number') {
+              values.push(v);
+            } else {
+              values.push(v === undefined || v === null ? null : String(v));
+            }
           }
         }
         if (fields.length > 0) {
@@ -1469,7 +1522,7 @@ export default {
     // YOUTUBE SEARCH & VIDEO DETAILS (PLAYLIST & SPOTLIGHT)
     // -------------------------------------------------------------
     if (path === '/api/admin/playlist/search' && request.method === 'GET') {
-      if (!isAuthorizedAdmin(request)) {
+      if (!isAuthorizedAdmin(request, url)) {
         return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
       }
       const q = url.searchParams.get('q') || '';
@@ -1478,7 +1531,7 @@ export default {
     }
 
     if (path === '/api/admin/playlist/fetch-url' && request.method === 'POST') {
-      if (!isAuthorizedAdmin(request)) {
+      if (!isAuthorizedAdmin(request, url)) {
         return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
       }
       const body = await request.json().catch(() => ({}));
@@ -1487,7 +1540,7 @@ export default {
     }
 
     if (path === '/api/admin/youtube-info' && request.method === 'POST') {
-      if (!isAuthorizedAdmin(request)) {
+      if (!isAuthorizedAdmin(request, url)) {
         return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
       }
       const body = await request.json().catch(() => ({}));
@@ -2304,6 +2357,7 @@ export default {
           }), { status: 400, headers: JSON_HEADERS });
         }
 
+        const catVal = Array.isArray(categories) ? categories.join(', ') : (categories || 'General Disinformation');
         const newEnt = {
           id: 'prop-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6),
           name: name.trim(),
@@ -2314,7 +2368,7 @@ export default {
           contact_email: contact_email || '',
           other_links: other_links || '',
           avatar_url: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=ef4444&color=fff&size=512&bold=true`,
-          categories: categories || 'General Disinformation',
+          categories: catVal,
           party: party || null,
           institution: institution || null,
           narrative: narrative.trim(),
@@ -2350,22 +2404,24 @@ export default {
     if ((path === '/api/admin/entities' || path === '/api/admin/entities/direct') && (effectiveMethod === 'POST' || request.method === 'POST')) {
       if (!isAuthorizedAdmin(request, url)) return new Response(JSON.stringify({ error: 'Unauthorized admin' }), { status: 401, headers: JSON_HEADERS });
       const b = await request.json().catch(() => ({}));
+      const catVal = Array.isArray(b.categories) ? b.categories.join(', ') : (b.categories || 'Coordinated Narrative');
+      const linksVal = Array.isArray(b.evidenceLinks) ? b.evidenceLinks : (Array.isArray(b.other_links) ? b.other_links : (b.other_links || ''));
       const newEnt = {
         id: b.id || ('prop-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6)),
-        name: b.name || 'Unnamed',
+        name: (b.name || 'Unnamed').trim(),
         handle_x: b.handle_x || '',
         handle_yt: b.handle_yt || '',
         handle_insta: b.handle_insta || '',
         contact_phone: b.contact_phone || '',
         contact_email: b.contact_email || '',
-        other_links: b.other_links || '',
+        other_links: linksVal,
         avatar_url: b.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(b.name || 'P')}&background=ef4444&color=fff&size=512&bold=true`,
-        categories: b.categories || 'Coordinated Narrative',
+        categories: catVal,
         party: b.party || '',
         institution: b.institution || '',
-        narrative: b.narrative || '',
+        narrative: (b.narrative || '').trim(),
         fact_check: b.fact_check || '',
-        proof_url: b.proof_url || '',
+        proof_url: b.proof_url || (Array.isArray(b.evidenceLinks) && b.evidenceLinks[0]) || '',
         upvotes: parseInt(b.upvotes || 0, 10),
         rating_avg: parseFloat(b.rating_avg ?? b.rating ?? 5.0),
         rating_count: parseInt(b.rating_count ?? b.total_ratings ?? 1, 10),
@@ -2436,20 +2492,23 @@ export default {
     if (path === '/api/nationalist-influencers/suggest' && (effectiveMethod === 'POST' || request.method === 'POST')) {
       try {
         const body = await request.json().catch(() => ({}));
+        const catVal = Array.isArray(body.categories) ? body.categories.join(', ') : (body.categories || body.category || 'Nationalist Creator');
         const newNat = {
           id: 'nat-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6),
-          name: body.name || 'Unnamed Patriot',
+          name: (body.name || 'Unnamed Patriot').trim(),
           handle_x: body.handle_x || '',
           handle_yt: body.handle_yt || '',
           handle_insta: body.handle_insta || '',
           other_links: body.other_links || '',
           avatar_url: body.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(body.name || 'Patriot')}&background=ff9933&color=fff&size=512&bold=true`,
-          category: body.category || 'Nationalist Creator',
-          description: body.description || '',
+          category: body.category || (Array.isArray(body.categories) ? body.categories[0] : 'Nationalist Creator'),
+          categories: catVal,
+          description: (body.description || 'Patriotic Voice of Bharat').trim(),
           status: 'pending',
           is_verified: 0,
           upvotes: 1,
-          created_at: new Date().toISOString()
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
         };
 
         await dbStore.addNationalist(newNat);
@@ -2479,16 +2538,18 @@ export default {
     if ((path === '/api/admin/nationalist-influencers' || path === '/api/admin/nationalist-influencers/direct') && (effectiveMethod === 'POST' || request.method === 'POST')) {
       if (!isAuthorizedAdmin(request, url)) return new Response(JSON.stringify({ error: 'Unauthorized admin' }), { status: 401, headers: JSON_HEADERS });
       const b = await request.json().catch(() => ({}));
+      const catVal = Array.isArray(b.categories) ? b.categories.join(', ') : (b.categories || b.category || 'Nationalist Creator');
       const newNat = {
         id: b.id || ('nat-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6)),
-        name: b.name || 'Unnamed Nationalist',
+        name: (b.name || 'Unnamed Nationalist').trim(),
         handle_x: b.handle_x || '',
         handle_yt: b.handle_yt || '',
         handle_insta: b.handle_insta || '',
         other_links: b.other_links || '',
         avatar_url: b.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(b.name || 'Patriot')}&background=ff9933&color=fff&size=512&bold=true`,
-        category: b.category || 'Nationalist Creator',
-        description: b.description || '',
+        category: b.category || (Array.isArray(b.categories) ? b.categories[0] : 'Nationalist Creator'),
+        categories: catVal,
+        description: (b.description || 'Patriotic Voice of Bharat').trim(),
         status: b.status || 'approved',
         is_verified: b.is_verified !== undefined ? (b.is_verified ? 1 : 0) : 1,
         upvotes: parseInt(b.upvotes || 0, 10),
@@ -2709,12 +2770,44 @@ export default {
       const saved = await dbStore.getKV('playlist');
       if (Array.isArray(saved)) memoryState.playlist = saved;
       const b = await request.json().catch(() => ({}));
+
+      // Support bulk tracks array
+      if (Array.isArray(b.tracks) && b.tracks.length > 0) {
+        const addedList = [];
+        for (const t of b.tracks) {
+          const videoId = t.videoId || t.video_id || extractYoutubeVideoId(t.url || t.audio_url || t.audioUrl || '');
+          if (!videoId) continue;
+          const trackObj = {
+            id: t.id || ('track_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4)),
+            title: t.title || 'Patriotic Track',
+            author: t.author || t.artist || t.channelName || 'Sovereign Voices',
+            artist: t.author || t.artist || t.channelName || 'Sovereign Voices',
+            video_id: videoId,
+            videoId: videoId,
+            audio_url: t.audio_url || t.audioUrl || `https://www.youtube.com/watch?v=${videoId}`,
+            thumbnail_url: t.thumbnail_url || t.thumbnailUrl || t.thumbnail || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+            duration: t.duration || '3:30',
+            is_active: 1
+          };
+          memoryState.playlist.push(trackObj);
+          addedList.push(trackObj);
+        }
+        await dbStore.putKV('playlist', memoryState.playlist);
+        return new Response(JSON.stringify({ success: true, count: addedList.length, tracks: addedList }), { headers: JSON_HEADERS });
+      }
+
+      // Single track
+      const videoId = b.videoId || b.video_id || extractYoutubeVideoId(b.url || b.audio_url || b.audioUrl || '');
       const newTrack = {
-        id: 'track_' + Date.now(),
-        title: b.title || 'National Anthem',
-        artist: b.artist || 'Sovereign Voices',
-        audio_url: b.audio_url || '',
-        duration: b.duration || '3:00',
+        id: b.id || ('track_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4)),
+        title: b.title || 'Patriotic Track',
+        author: b.author || b.artist || b.channelName || 'Sovereign Voices',
+        artist: b.author || b.artist || b.channelName || 'Sovereign Voices',
+        video_id: videoId || '',
+        videoId: videoId || '',
+        audio_url: b.audio_url || b.audioUrl || (videoId ? `https://www.youtube.com/watch?v=${videoId}` : ''),
+        thumbnail_url: b.thumbnail_url || b.thumbnailUrl || b.thumbnail || (videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : ''),
+        duration: b.duration || '3:30',
         is_active: 1
       };
       memoryState.playlist.push(newTrack);
@@ -2727,7 +2820,7 @@ export default {
       const saved = await dbStore.getKV('playlist');
       if (Array.isArray(saved)) memoryState.playlist = saved;
       const id = path.replace('/api/admin/playlist/', '').replace('/toggle', '').split('/')[0].trim();
-      const track = memoryState.playlist.find(p => String(p.id).trim() === String(id).trim());
+      const track = memoryState.playlist.find(p => String(p.id).trim() === String(id).trim() || String(p.video_id || p.videoId).trim() === String(id).trim());
       if (track) {
         track.is_active = track.is_active ? 0 : 1;
         await dbStore.putKV('playlist', memoryState.playlist);
@@ -2741,7 +2834,7 @@ export default {
       const saved = await dbStore.getKV('playlist');
       if (Array.isArray(saved)) memoryState.playlist = saved;
       const id = path.replace('/api/admin/playlist/', '').split('/')[0].trim();
-      memoryState.playlist = memoryState.playlist.filter(p => String(p.id).trim() !== String(id).trim());
+      memoryState.playlist = memoryState.playlist.filter(p => String(p.id).trim() !== String(id).trim() && String(p.video_id || p.videoId).trim() !== String(id).trim());
       await dbStore.putKV('playlist', memoryState.playlist);
       return new Response(JSON.stringify({ success: true, deletedId: id }), { headers: JSON_HEADERS });
     }

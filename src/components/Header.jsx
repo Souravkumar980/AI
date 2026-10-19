@@ -152,7 +152,7 @@ export default function Header({
             <span>{t('nav_home', 'Exposed Propagandus')}</span>
             {stats && (
               <span className="bg-black text-white text-[10px] px-1.5 py-0.5 rounded-full font-mono">
-                {stats.totalEntities || 0}
+                {stats.totalEntities ?? 0}
               </span>
             )}
           </button>
