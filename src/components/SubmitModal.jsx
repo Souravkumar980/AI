@@ -674,6 +674,7 @@ export default function SubmitModal({ isOpen, onClose, onSuccess }) {
               <img
                 src={avatarUrl || (name ? `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(name)}` : 'https://api.dicebear.com/7.x/bottts/svg?seed=placeholder')}
                 alt="Profile Preview"
+                referrerPolicy="no-referrer"
                 className="w-12 h-12 mx-auto rounded-xl border border-black/30 object-cover shadow-sm bg-gray-100"
               />
             </div>

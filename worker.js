@@ -376,6 +376,79 @@ async function getYoutubeVideoDetails(videoUrlOrId) {
   };
 }
 
+// Smart Avatar Resolver: Preserves user avatars & automatically fetches social profile pictures
+async function resolveAvatarUrl({ avatar_url, name, handle_yt, handle_x, handle_insta, type = 'propagandu' }) {
+  if (avatar_url && typeof avatar_url === 'string' && avatar_url.trim().length > 10) {
+    const trimmed = avatar_url.trim();
+    // If it's a real photo (e.g. twitter, youtube, google, cdn) and not a generic fallback
+    if (
+      !trimmed.includes('ui-avatars.com') &&
+      !trimmed.includes('api.dicebear.com/7.x/bottts') &&
+      !trimmed.includes('placeholder')
+    ) {
+      return trimmed;
+    }
+  }
+
+  // 1. YouTube Channel avatar
+  if (handle_yt) {
+    const cleanYt = cleanSocialHandle(handle_yt, 'yt');
+    if (cleanYt) {
+      try {
+        const ytProf = await fetchYoutubeProfile(cleanYt);
+        if (ytProf && ytProf.avatarUrl && !ytProf.avatarUrl.includes('ui-avatars.com')) {
+          return ytProf.avatarUrl;
+        }
+      } catch (e) {}
+    }
+  }
+
+  // 2. Twitter / X avatar
+  if (handle_x) {
+    const cleanX = cleanSocialHandle(handle_x, 'x');
+    if (cleanX) {
+      try {
+        const twProf = await fetchTwitterProfile(cleanX);
+        if (twProf && twProf.avatarUrl && !twProf.avatarUrl.includes('ui-avatars.com')) {
+          return twProf.avatarUrl;
+        }
+      } catch (e) {}
+    }
+  }
+
+  // 3. Instagram / Cross-platform avatar
+  if (handle_insta) {
+    const cleanIg = cleanSocialHandle(handle_insta, 'insta');
+    if (cleanIg) {
+      try {
+        const igProf = await fetchInstagramProfile(cleanIg);
+        if (igProf && igProf.avatarUrl && !igProf.avatarUrl.includes('ui-avatars.com')) {
+          return igProf.avatarUrl;
+        }
+      } catch (e) {}
+    }
+  }
+
+  // 4. Try unavatar as high-quality fallback if handles exist
+  if (handle_x) {
+    const cleanX = cleanSocialHandle(handle_x, 'x');
+    if (cleanX) return `https://unavatar.io/x/${cleanX}`;
+  }
+  if (handle_yt) {
+    const cleanYt = cleanSocialHandle(handle_yt, 'yt');
+    if (cleanYt) return `https://unavatar.io/youtube/@${cleanYt}`;
+  }
+
+  // 5. Existing avatar_url if any
+  if (avatar_url && typeof avatar_url === 'string' && avatar_url.trim().length > 5) {
+    return avatar_url.trim();
+  }
+
+  // 6. Styled UI Avatars fallback
+  const bg = type === 'nationalist' ? '138808' : 'ef4444';
+  return `https://ui-avatars.com/api/?name=${encodeURIComponent(name || 'Profile')}&background=${bg}&color=fff&size=512&bold=true`;
+}
+
 // Helper: Broadcast live SSE event to all connected clients
 function broadcastSSE(data) {
   const encoder = new TextEncoder();
@@ -1518,6 +1591,37 @@ export default {
       }
     }
 
+    // High-performance Edge Image Proxy (bypasses browser CORS & hotlinking blocks)
+    if (path === '/api/proxy-image' && (effectiveMethod === 'GET' || request.method === 'GET')) {
+      const targetUrl = url.searchParams.get('url');
+      if (!targetUrl || !targetUrl.startsWith('http')) {
+        return new Response('Missing or invalid url parameter', { status: 400 });
+      }
+      try {
+        const upstreamRes = await fetch(targetUrl, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8'
+          }
+        });
+        if (!upstreamRes.ok) {
+          return new Response('Failed to fetch image', { status: upstreamRes.status });
+        }
+        const contentType = upstreamRes.headers.get('content-type') || 'image/jpeg';
+        const body = await upstreamRes.arrayBuffer();
+        return new Response(body, {
+          status: 200,
+          headers: {
+            'Content-Type': contentType,
+            'Cache-Control': 'public, max-age=604800, s-maxage=604800, immutable',
+            'Access-Control-Allow-Origin': '*'
+          }
+        });
+      } catch (err) {
+        return new Response('Proxy error: ' + err.message, { status: 502 });
+      }
+    }
+
     // -------------------------------------------------------------
     // YOUTUBE SEARCH & VIDEO DETAILS (PLAYLIST & SPOTLIGHT)
     // -------------------------------------------------------------
@@ -2358,6 +2462,15 @@ export default {
         }
 
         const catVal = Array.isArray(categories) ? categories.join(', ') : (categories || 'General Disinformation');
+        const resolvedAvatar = await resolveAvatarUrl({
+          avatar_url: body.avatar_url,
+          name: name.trim(),
+          handle_yt,
+          handle_x,
+          handle_insta,
+          type: 'propagandu'
+        });
+
         const newEnt = {
           id: 'prop-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6),
           name: name.trim(),
@@ -2367,7 +2480,7 @@ export default {
           contact_phone: contact_phone || '',
           contact_email: contact_email || '',
           other_links: other_links || '',
-          avatar_url: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=ef4444&color=fff&size=512&bold=true`,
+          avatar_url: resolvedAvatar,
           categories: catVal,
           party: party || null,
           institution: institution || null,
@@ -2406,6 +2519,14 @@ export default {
       const b = await request.json().catch(() => ({}));
       const catVal = Array.isArray(b.categories) ? b.categories.join(', ') : (b.categories || 'Coordinated Narrative');
       const linksVal = Array.isArray(b.evidenceLinks) ? b.evidenceLinks : (Array.isArray(b.other_links) ? b.other_links : (b.other_links || ''));
+      const resolvedAvatar = await resolveAvatarUrl({
+        avatar_url: b.avatar_url,
+        name: (b.name || 'Unnamed').trim(),
+        handle_yt: b.handle_yt,
+        handle_x: b.handle_x,
+        handle_insta: b.handle_insta,
+        type: 'propagandu'
+      });
       const newEnt = {
         id: b.id || ('prop-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6)),
         name: (b.name || 'Unnamed').trim(),
@@ -2415,7 +2536,7 @@ export default {
         contact_phone: b.contact_phone || '',
         contact_email: b.contact_email || '',
         other_links: linksVal,
-        avatar_url: b.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(b.name || 'P')}&background=ef4444&color=fff&size=512&bold=true`,
+        avatar_url: resolvedAvatar,
         categories: catVal,
         party: b.party || '',
         institution: b.institution || '',
@@ -2463,6 +2584,16 @@ export default {
         await dbStore.getEntities();
         ent = memoryState.entities.find(e => String(e.id).trim() === String(id).trim());
       }
+      if (b.avatar_url || b.handle_yt || b.handle_x || b.handle_insta || (ent && !ent.avatar_url)) {
+        b.avatar_url = await resolveAvatarUrl({
+          avatar_url: b.avatar_url || ent?.avatar_url,
+          name: b.name || ent?.name,
+          handle_yt: b.handle_yt !== undefined ? b.handle_yt : ent?.handle_yt,
+          handle_x: b.handle_x !== undefined ? b.handle_x : ent?.handle_x,
+          handle_insta: b.handle_insta !== undefined ? b.handle_insta : ent?.handle_insta,
+          type: 'propagandu'
+        });
+      }
       if (ent) {
         Object.assign(ent, b);
         ent.updated_at = new Date().toISOString();
@@ -2493,6 +2624,14 @@ export default {
       try {
         const body = await request.json().catch(() => ({}));
         const catVal = Array.isArray(body.categories) ? body.categories.join(', ') : (body.categories || body.category || 'Nationalist Creator');
+        const resolvedAvatar = await resolveAvatarUrl({
+          avatar_url: body.avatar_url,
+          name: (body.name || 'Unnamed Patriot').trim(),
+          handle_yt: body.handle_yt,
+          handle_x: body.handle_x,
+          handle_insta: body.handle_insta,
+          type: 'nationalist'
+        });
         const newNat = {
           id: 'nat-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6),
           name: (body.name || 'Unnamed Patriot').trim(),
@@ -2500,7 +2639,7 @@ export default {
           handle_yt: body.handle_yt || '',
           handle_insta: body.handle_insta || '',
           other_links: body.other_links || '',
-          avatar_url: body.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(body.name || 'Patriot')}&background=ff9933&color=fff&size=512&bold=true`,
+          avatar_url: resolvedAvatar,
           category: body.category || (Array.isArray(body.categories) ? body.categories[0] : 'Nationalist Creator'),
           categories: catVal,
           description: (body.description || 'Patriotic Voice of Bharat').trim(),
@@ -2539,6 +2678,14 @@ export default {
       if (!isAuthorizedAdmin(request, url)) return new Response(JSON.stringify({ error: 'Unauthorized admin' }), { status: 401, headers: JSON_HEADERS });
       const b = await request.json().catch(() => ({}));
       const catVal = Array.isArray(b.categories) ? b.categories.join(', ') : (b.categories || b.category || 'Nationalist Creator');
+      const resolvedAvatar = await resolveAvatarUrl({
+        avatar_url: b.avatar_url,
+        name: (b.name || 'Unnamed Nationalist').trim(),
+        handle_yt: b.handle_yt,
+        handle_x: b.handle_x,
+        handle_insta: b.handle_insta,
+        type: 'nationalist'
+      });
       const newNat = {
         id: b.id || ('nat-' + Date.now() + '-' + Math.random().toString(36).substr(2, 6)),
         name: (b.name || 'Unnamed Nationalist').trim(),
@@ -2546,7 +2693,7 @@ export default {
         handle_yt: b.handle_yt || '',
         handle_insta: b.handle_insta || '',
         other_links: b.other_links || '',
-        avatar_url: b.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(b.name || 'Patriot')}&background=ff9933&color=fff&size=512&bold=true`,
+        avatar_url: resolvedAvatar,
         category: b.category || (Array.isArray(b.categories) ? b.categories[0] : 'Nationalist Creator'),
         categories: catVal,
         description: (b.description || 'Patriotic Voice of Bharat').trim(),
@@ -2569,6 +2716,16 @@ export default {
       if (!nat) {
         await dbStore.getNationalists();
         nat = memoryState.nationalists.find(n => String(n.id).trim() === String(id).trim());
+      }
+      if (b.avatar_url || b.handle_yt || b.handle_x || b.handle_insta || (nat && !nat.avatar_url)) {
+        b.avatar_url = await resolveAvatarUrl({
+          avatar_url: b.avatar_url || nat?.avatar_url,
+          name: b.name || nat?.name,
+          handle_yt: b.handle_yt !== undefined ? b.handle_yt : nat?.handle_yt,
+          handle_x: b.handle_x !== undefined ? b.handle_x : nat?.handle_x,
+          handle_insta: b.handle_insta !== undefined ? b.handle_insta : nat?.handle_insta,
+          type: 'nationalist'
+        });
       }
       if (nat) {
         Object.assign(nat, b);

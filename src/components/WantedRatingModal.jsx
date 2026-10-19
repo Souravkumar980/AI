@@ -92,6 +92,7 @@ export default function WantedRatingModal({
           <img
             src={entity.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(entity.name)}&background=ef4444&color=fff&size=128&bold=true`}
             alt={entity.name}
+            referrerPolicy="no-referrer"
             className="w-14 h-14 rounded-xl border-2 border-black shadow-[2px_2px_0px_#000] object-cover bg-white shrink-0"
             onError={(e) => {
               e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(entity.name)}&background=ef4444&color=fff&size=128&bold=true`;

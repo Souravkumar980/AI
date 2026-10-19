@@ -1478,19 +1478,28 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
         target = yt || x || ig || name;
       }
 
-      if (!target && !name) {
+      if (!yt && !x && !ig && !name) {
         alert('Please enter a name or at least one handle (YT, X, IG) first.');
         setIsFetchingAvatar(false);
         return;
       }
 
       let fetchedAvatar = '';
-      try {
-        const res = await autoFetchSocialProfile(target || name);
-        if (res && res.success && res.avatarUrl) {
-          fetchedAvatar = res.avatarUrl;
-        }
-      } catch (err) {}
+      const attempts = [];
+      if (yt) attempts.push({ url: yt.startsWith('http') ? yt : `https://youtube.com/@${yt.replace(/^@/, '')}`, platform: 'yt' });
+      if (x) attempts.push({ url: x.startsWith('http') ? x : `https://x.com/${x.replace(/^@/, '')}`, platform: 'x' });
+      if (ig) attempts.push({ url: ig.startsWith('http') ? ig : `https://instagram.com/${ig.replace(/^@/, '')}`, platform: 'insta' });
+      if (name) attempts.push({ url: name, platform: 'auto' });
+
+      for (const att of attempts) {
+        try {
+          const res = await autoFetchSocialProfile(att.url, att.platform);
+          if (res && res.success && res.avatarUrl && !res.avatarUrl.includes('ui-avatars.com')) {
+            fetchedAvatar = res.avatarUrl;
+            break;
+          }
+        } catch (err) {}
+      }
 
       if (!fetchedAvatar) {
         fetchedAvatar = deriveAvatarFromHandles(name, yt, x, ig);
@@ -2806,6 +2815,7 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
                                   <img
                                     src={item.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(item.name)}`}
                                     alt=""
+                                    referrerPolicy="no-referrer"
                                     className="w-10 h-10 rounded-xl border border-slate-200 object-cover bg-white shadow-xs"
                                   />
                                 </td>
@@ -2997,6 +3007,7 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
                                 <img
                                   src={ent.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(ent.name)}`}
                                   alt=""
+                                  referrerPolicy="no-referrer"
                                   className="w-9 h-9 rounded-lg border border-black object-cover bg-white"
                                 />
                               </td>
@@ -5515,6 +5526,7 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
                     <img
                       src={editingEntity.avatar_url || 'https://ui-avatars.com/api/?name=Propagandu&background=0D8ABC&color=fff&size=128'}
                       alt="Preview"
+                      referrerPolicy="no-referrer"
                       className="w-10 h-10 rounded-xl border border-black object-cover bg-gray-100 shrink-0"
                       onError={(e) => {
                         e.target.src = 'https://ui-avatars.com/api/?name=Propagandu&background=0D8ABC&color=fff&size=128';
@@ -5710,6 +5722,7 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
                     <img
                       src={editingNationalist.avatar_url || 'https://ui-avatars.com/api/?name=Nationalist&background=138808&color=fff&size=128'}
                       alt="Preview"
+                      referrerPolicy="no-referrer"
                       className="w-10 h-10 rounded-xl border border-black object-cover bg-gray-100 shrink-0"
                       onError={(e) => {
                         e.target.src = 'https://ui-avatars.com/api/?name=Nationalist&background=138808&color=fff&size=128';
@@ -5901,6 +5914,7 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
                     <img
                       src={directNatForm.avatar_url || 'https://ui-avatars.com/api/?name=Creator&background=138808&color=fff&size=128'}
                       alt="Preview"
+                      referrerPolicy="no-referrer"
                       className="w-10 h-10 rounded-xl border border-black object-cover bg-gray-100 shrink-0"
                       onError={(e) => {
                         e.target.src = 'https://ui-avatars.com/api/?name=Creator&background=138808&color=fff&size=128';
@@ -6072,6 +6086,7 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
                     <img
                       src={directPropForm.avatar_url || 'https://ui-avatars.com/api/?name=Propagandu&background=E1306C&color=fff&size=128'}
                       alt="Preview"
+                      referrerPolicy="no-referrer"
                       className="w-10 h-10 rounded-xl border border-black object-cover bg-gray-100 shrink-0"
                       onError={(e) => {
                         e.target.src = 'https://ui-avatars.com/api/?name=Propagandu&background=E1306C&color=fff&size=128';

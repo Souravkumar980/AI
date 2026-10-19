@@ -478,9 +478,27 @@ export default function PropagandusDatabase({ onOpenSubmit, onOpenReport, onOpen
                     <img
                       src={item.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(item.name || 'Propagandu')}&background=E1306C&color=ffffff&size=256&bold=true`}
                       alt={item.name}
+                      referrerPolicy="no-referrer"
+                      loading="lazy"
                       className="w-20 h-20 sm:w-22 sm:h-22 rounded-2xl border-3 border-black shadow-[3px_3px_0px_#000] object-cover bg-white"
                       onError={(e) => {
-                        e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(item.name || 'Propagandu')}&background=E1306C&color=ffffff&size=256&bold=true`;
+                        const t = e.currentTarget;
+                        if (item.avatar_url && !t.dataset.triedProxy && !item.avatar_url.includes('/api/proxy-image') && !item.avatar_url.includes('ui-avatars.com')) {
+                          t.dataset.triedProxy = 'true';
+                          t.src = `/api/proxy-image?url=${encodeURIComponent(item.avatar_url)}`;
+                          return;
+                        }
+                        if (item.handle_x && !t.dataset.triedX) {
+                          t.dataset.triedX = 'true';
+                          t.src = `https://unavatar.io/x/${item.handle_x}`;
+                          return;
+                        }
+                        if (item.handle_yt && !t.dataset.triedYt) {
+                          t.dataset.triedYt = 'true';
+                          t.src = `https://unavatar.io/youtube/@${item.handle_yt}`;
+                          return;
+                        }
+                        t.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(item.name || 'Propagandu')}&background=E1306C&color=ffffff&size=256&bold=true`;
                       }}
                     />
                   </div>
@@ -599,9 +617,17 @@ export default function PropagandusDatabase({ onOpenSubmit, onOpenReport, onOpen
                           <img
                             src={item.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(item.name || 'Propagandu')}&background=E1306C&color=ffffff&size=256&bold=true`}
                             alt={item.name}
+                            referrerPolicy="no-referrer"
+                            loading="lazy"
                             className="w-12 h-12 rounded-xl border border-black/30 object-cover shadow-sm bg-white shrink-0"
                             onError={(e) => {
-                              e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(item.name || 'Propagandu')}&background=E1306C&color=ffffff&size=256&bold=true`;
+                              const t = e.currentTarget;
+                              if (item.avatar_url && !t.dataset.triedProxy && !item.avatar_url.includes('/api/proxy-image') && !item.avatar_url.includes('ui-avatars.com')) {
+                                t.dataset.triedProxy = 'true';
+                                t.src = `/api/proxy-image?url=${encodeURIComponent(item.avatar_url)}`;
+                                return;
+                              }
+                              t.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(item.name || 'Propagandu')}&background=E1306C&color=ffffff&size=256&bold=true`;
                             }}
                           />
                           <div>

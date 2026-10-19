@@ -408,6 +408,7 @@ export default function SuggestNationalistModal({ isOpen, onClose, onSuccess }) 
               <img
                 src={avatarUrl || (name ? `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(name)}` : 'https://api.dicebear.com/7.x/bottts/svg?seed=nationalist')}
                 alt="Preview"
+                referrerPolicy="no-referrer"
                 className="w-11 h-11 rounded-xl border border-black object-cover bg-white shrink-0 shadow-sm"
               />
               <span className="text-[10px] text-gray-500 font-mono">Avatar Preview</span>

@@ -670,9 +670,27 @@ function CreatorCard({ item, rank, rankBadge, rankRingColor, isUpvoted, onUpvote
                 <img
                   src={item.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(item.name || 'Nationalist')}&background=138808&color=ffffff&size=256&bold=true`}
                   alt={item.name}
+                  referrerPolicy="no-referrer"
+                  loading="lazy"
                   className={`w-14 h-14 rounded-2xl border-2 border-black object-cover shadow-[2px_2px_0px_#000] bg-white shrink-0 ${rankRingColor || ''}`}
                   onError={(e) => {
-                    e.target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(item.name || 'Nationalist')}&background=138808&color=ffffff&size=256&bold=true`;
+                    const t = e.currentTarget;
+                    if (item.avatar_url && !t.dataset.triedProxy && !item.avatar_url.includes('/api/proxy-image') && !item.avatar_url.includes('ui-avatars.com')) {
+                      t.dataset.triedProxy = 'true';
+                      t.src = `/api/proxy-image?url=${encodeURIComponent(item.avatar_url)}`;
+                      return;
+                    }
+                    if (item.handle_x && !t.dataset.triedX) {
+                      t.dataset.triedX = 'true';
+                      t.src = `https://unavatar.io/x/${item.handle_x}`;
+                      return;
+                    }
+                    if (item.handle_yt && !t.dataset.triedYt) {
+                      t.dataset.triedYt = 'true';
+                      t.src = `https://unavatar.io/youtube/@${item.handle_yt}`;
+                      return;
+                    }
+                    t.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(item.name || 'Nationalist')}&background=138808&color=ffffff&size=256&bold=true`;
                   }}
                 />
                 {rank === 1 && (
