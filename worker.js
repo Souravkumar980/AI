@@ -556,6 +556,14 @@ function solveInfinityFreeChallenge(html) {
 
 let cachedInfinityFreeCookie = '';
 
+// High-Speed Edge Shield Cache (Prevents InfinityFree Daily Entry Process exhaustion)
+const ifCache = {
+  entities: { data: null, lastFetched: 0 },
+  posts: { data: null, lastFetched: 0 },
+  nationalists: { data: null, lastFetched: 0 }
+};
+const IF_CACHE_TTL = 15 * 60 * 1000; // 15 minutes TTL for read requests
+
 // Live Bidirectional InfinityFree MySQL Bridge with Auto AES-Cookie Challenge Solving
 async function fetchFromInfinityFree(endpoint, method = 'GET', body = null, extraHeaders = {}) {
   try {
@@ -781,13 +789,21 @@ class CloudflareDataStore {
   // --- ENTITIES & WANTED LEVEL RANKING ---
   async getEntities({ search, category, party, institution, sort } = {}) {
     let list = null;
-    try {
-      const ifData = await fetchFromInfinityFree('entities', 'GET');
-      if (Array.isArray(ifData)) {
-        list = ifData;
-        memoryState.entities = ifData;
-      }
-    } catch (e) {}
+    const now = Date.now();
+    const isCacheExpired = (now - ifCache.entities.lastFetched) > IF_CACHE_TTL;
+
+    if (ifCache.entities.data && !isCacheExpired) {
+      list = ifCache.entities.data;
+    } else {
+      try {
+        const ifData = await fetchFromInfinityFree('entities', 'GET');
+        if (Array.isArray(ifData)) {
+          list = ifData;
+          memoryState.entities = ifData;
+          ifCache.entities = { data: ifData, lastFetched: now };
+        }
+      } catch (e) {}
+    }
 
     if (list === null && this.d1) {
       try {
@@ -867,6 +883,7 @@ class CloudflareDataStore {
       memoryState.entities.unshift(entity);
     }
     memoryState.deletedEntityIds.delete(cleanId);
+    ifCache.entities = { data: memoryState.entities, lastFetched: Date.now() };
 
     // Live sync to InfinityFree MySQL
     try {
@@ -906,6 +923,7 @@ class CloudflareDataStore {
       Object.assign(ent, updates);
       ent.updated_at = new Date().toISOString();
     }
+    ifCache.entities = { data: memoryState.entities, lastFetched: Date.now() };
 
     // Live sync to InfinityFree MySQL
     try {
@@ -950,6 +968,7 @@ class CloudflareDataStore {
     for (const k of Object.keys(memoryState.ratings)) {
       if (k.startsWith(`${cleanId}:`)) delete memoryState.ratings[k];
     }
+    ifCache.entities = { data: memoryState.entities, lastFetched: Date.now() };
 
     // Live sync to InfinityFree MySQL
     try {
@@ -1045,6 +1064,7 @@ class CloudflareDataStore {
     if (ent) {
       ent.rating_avg = avg;
       ent.rating_count = count;
+      ifCache.entities = { data: memoryState.entities, lastFetched: Date.now() };
     }
 
     return { success: true, user_rating: star, rating_avg: avg, rating_count: count };
@@ -1052,10 +1072,16 @@ class CloudflareDataStore {
 
   // --- POSTS ---
   async getPosts() {
+    const now = Date.now();
+    const isCacheExpired = (now - ifCache.posts.lastFetched) > IF_CACHE_TTL;
+    if (ifCache.posts.data && !isCacheExpired) {
+      return ifCache.posts.data;
+    }
     try {
       const ifPosts = await fetchFromInfinityFree('posts', 'GET');
       if (Array.isArray(ifPosts)) {
         memoryState.posts = ifPosts;
+        ifCache.posts = { data: ifPosts, lastFetched: now };
         return ifPosts;
       }
     } catch (e) {}
@@ -1077,6 +1103,7 @@ class CloudflareDataStore {
 
   async addPost(post) {
     memoryState.posts.unshift(post);
+    ifCache.posts = { data: memoryState.posts, lastFetched: Date.now() };
 
     // Live sync to InfinityFree MySQL
     try {
@@ -1132,6 +1159,7 @@ class CloudflareDataStore {
 
   async deletePost(postId) {
     memoryState.posts = memoryState.posts.filter(p => String(p.id).trim() !== String(postId).trim());
+    ifCache.posts = { data: memoryState.posts, lastFetched: Date.now() };
 
     // Live sync to InfinityFree MySQL
     try {
@@ -1156,10 +1184,16 @@ class CloudflareDataStore {
 
   // --- NATIONALISTS ---
   async getNationalists() {
+    const now = Date.now();
+    const isCacheExpired = (now - ifCache.nationalists.lastFetched) > IF_CACHE_TTL;
+    if (ifCache.nationalists.data && !isCacheExpired) {
+      return ifCache.nationalists.data.filter(n => !memoryState.deletedNationalistIds.has(n.id));
+    }
     try {
       const ifNats = await fetchFromInfinityFree('nationalist-influencers', 'GET');
       if (Array.isArray(ifNats)) {
         memoryState.nationalists = ifNats;
+        ifCache.nationalists = { data: ifNats, lastFetched: now };
         return ifNats;
       }
     } catch (e) {}
@@ -1188,6 +1222,7 @@ class CloudflareDataStore {
       memoryState.nationalists.unshift(nat);
     }
     memoryState.deletedNationalistIds.delete(cleanId);
+    ifCache.nationalists = { data: memoryState.nationalists, lastFetched: Date.now() };
 
     // Live sync to InfinityFree MySQL
     try {
@@ -1226,6 +1261,7 @@ class CloudflareDataStore {
       Object.assign(nat, updates);
       nat.updated_at = new Date().toISOString();
     }
+    ifCache.nationalists = { data: memoryState.nationalists, lastFetched: Date.now() };
 
     // Live sync to InfinityFree MySQL
     try {
@@ -1267,6 +1303,7 @@ class CloudflareDataStore {
     const cleanId = String(id).trim();
     memoryState.nationalists = memoryState.nationalists.filter(n => String(n.id).trim() !== cleanId);
     memoryState.deletedNationalistIds.add(cleanId);
+    ifCache.nationalists = { data: memoryState.nationalists, lastFetched: Date.now() };
 
     // Live sync to InfinityFree MySQL
     try {
@@ -2225,11 +2262,6 @@ export default {
       const rating = Math.max(1, Math.min(5, parseInt(body.rating || 5, 10)));
 
       const result = await dbStore.rateEntity(entId, clientIp, rating);
-
-      if (ctx?.waitUntil) {
-        ctx.waitUntil(forwardToInfinityFree(path, 'POST', { rating }, {}));
-      }
-
       return new Response(JSON.stringify(result), { headers: JSON_HEADERS });
     }
 
@@ -2331,11 +2363,6 @@ export default {
         };
 
         await dbStore.addEntity(newEnt);
-
-        if (ctx?.waitUntil) {
-          ctx.waitUntil(forwardToInfinityFree(path, 'POST', body, {}));
-        }
-
         return new Response(JSON.stringify({ success: true, entity: newEnt }), { headers: JSON_HEADERS });
       } catch (err) {
         return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: JSON_HEADERS });
@@ -2380,11 +2407,6 @@ export default {
         updated_at: new Date().toISOString()
       };
       await dbStore.addEntity(newEnt);
-
-      if (ctx?.waitUntil) {
-        ctx.waitUntil(forwardToInfinityFree(path, 'POST', b, { 'x-admin-key': request.headers.get('x-admin-key') || '' }));
-      }
-
       return new Response(JSON.stringify({ success: true, entity: newEnt }), { headers: JSON_HEADERS });
     }
 
@@ -2423,9 +2445,6 @@ export default {
         ent.updated_at = new Date().toISOString();
       }
       await dbStore.updateEntity(id, b);
-      if (ctx?.waitUntil) {
-        ctx.waitUntil(forwardToInfinityFree(path, 'PUT', b, { 'x-admin-key': request.headers.get('x-admin-key') || '' }));
-      }
       return new Response(JSON.stringify({ success: true, entity: ent || { id, ...b } }), { headers: JSON_HEADERS });
     }
 
@@ -2435,9 +2454,6 @@ export default {
       const id = path.replace('/api/admin/entities/', '').split('/')[0].trim();
       const cleanId = String(id).trim();
       await dbStore.deleteEntity(cleanId);
-      if (ctx?.waitUntil) {
-        ctx.waitUntil(forwardToInfinityFree(path, 'DELETE', null, { 'x-admin-key': request.headers.get('x-admin-key') || '' }));
-      }
       return new Response(JSON.stringify({ success: true, deletedId: cleanId }), { headers: JSON_HEADERS });
     }
 
@@ -2470,11 +2486,6 @@ export default {
         };
 
         await dbStore.addNationalist(newNat);
-
-        if (ctx?.waitUntil) {
-          ctx.waitUntil(forwardToInfinityFree(path, 'POST', body, {}));
-        }
-
         return new Response(JSON.stringify({ success: true, nationalist: newNat }), { headers: JSON_HEADERS });
       } catch (err) {
         return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: JSON_HEADERS });
@@ -2518,11 +2529,6 @@ export default {
       };
 
       await dbStore.addNationalist(newNat);
-
-      if (ctx?.waitUntil) {
-        ctx.waitUntil(forwardToInfinityFree(path, 'POST', b, { 'x-admin-key': request.headers.get('x-admin-key') || '' }));
-      }
-
       return new Response(JSON.stringify({ success: true, nationalist: newNat }), { headers: JSON_HEADERS });
     }
 
@@ -2540,9 +2546,6 @@ export default {
         nat.updated_at = new Date().toISOString();
       }
       await dbStore.updateNationalist(id, b);
-      if (ctx?.waitUntil) {
-        ctx.waitUntil(forwardToInfinityFree(path, effectiveMethod, b, { 'x-admin-key': request.headers.get('x-admin-key') || '' }));
-      }
       return new Response(JSON.stringify({ success: true, nationalist: nat || { id, ...b } }), { headers: JSON_HEADERS });
     }
 
@@ -2551,9 +2554,6 @@ export default {
       const id = path.replace('/api/admin/nationalist-influencers/', '').split('/')[0].trim();
       const cleanId = String(id).trim();
       await dbStore.deleteNationalist(cleanId);
-      if (ctx?.waitUntil) {
-        ctx.waitUntil(forwardToInfinityFree(path, 'DELETE', null, { 'x-admin-key': request.headers.get('x-admin-key') || '' }));
-      }
       return new Response(JSON.stringify({ success: true, deletedId: cleanId }), { headers: JSON_HEADERS });
     }
 
@@ -2803,9 +2803,6 @@ export default {
           updated_at: new Date().toISOString()
         };
         await dbStore.addPost(newPost);
-        if (ctx?.waitUntil) {
-          ctx.waitUntil(forwardToInfinityFree(path, 'POST', body, { 'x-admin-key': request.headers.get('x-admin-key') || '' }));
-        }
         return new Response(JSON.stringify({ success: true, post: newPost }), { headers: JSON_HEADERS });
       } catch (err) {
         return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: JSON_HEADERS });
@@ -2816,9 +2813,6 @@ export default {
       if (!isAuthorizedAdmin(request, url)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
       const id = path.replace('/api/admin/posts/', '').split('/')[0].trim();
       await dbStore.deletePost(id);
-      if (ctx?.waitUntil) {
-        ctx.waitUntil(forwardToInfinityFree(path, 'DELETE', null, { 'x-admin-key': request.headers.get('x-admin-key') || '' }));
-      }
       return new Response(JSON.stringify({ success: true, deletedId: id }), { headers: JSON_HEADERS });
     }
 
