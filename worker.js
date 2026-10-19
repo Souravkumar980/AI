@@ -1,26 +1,5 @@
-/**
- * ===================================================================
- * 🛡️ EXPOSED PROPAGANDUS — PRODUCTION CLOUDFLARE WORKER API GATEWAY
- * ===================================================================
- * Complete High-Performance Edge API Server:
- * - 100% Real analytics, tracking, community chat, and entities database.
- * - Sovereign Patriot Shield: Anti-scraping & cryptographic time-rotating handshake.
- * - InfinityFree MySQL Hybrid Bridge: Asynchronously syncs writes to InfinityFree
- *   while serving reads from fast edge memory, preventing InfinityFree's
- *   Entry Process Limit from ever being exceeded.
- * - 5-Star Wanted Level Rating system (IP-unique, persistent, editable, admin override).
- * - Realtime Community Chat & Private Channel Admission System.
- * - Suggest Updates & Features dedicated submissions & admin management.
- * - YouTube, Twitter/X, and Instagram social metadata extractor.
- * - Server Disk Snapshot backup & restore simulation at edge.
- *
- * Bharat Mata ki Jai 🇮🇳
- * ===================================================================
- */
-
 const EP_CLIENT_KEY = 'ep-client-v1-bharat-first-2024';
 const EP_SHIELD_SALT = 'BharatSovereignShield2026!Protected@Edge';
-const INFINITYFREE_BACKEND_URL = 'https://exposedpropagandus.is-best.net/api.php';
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -450,191 +429,6 @@ function isAuthorizedAdmin(request, url = null, env = null) {
   );
 }
 
-// ===================================================================
-// 🌐 INFINITYFREE MYSQL DATA BRIDGE (Pure JS AES-128 Challenge Solver)
-// ===================================================================
-const ifSbox = [0x63, 0x7c, 0x77, 0x7b, 0xf2, 0x6b, 0x6f, 0xc5, 0x30, 0x01, 0x67, 0x2b, 0xfe, 0xd7, 0xab, 0x76,
-  0xca, 0x82, 0xc9, 0x7d, 0xfa, 0x59, 0x47, 0xf0, 0xad, 0xd4, 0xa2, 0xaf, 0x9c, 0xa4, 0x72, 0xc0,
-  0xb7, 0xfd, 0x93, 0x26, 0x36, 0x3f, 0xf7, 0xcc, 0x34, 0xa5, 0xe5, 0xf1, 0x71, 0xd8, 0x31, 0x15,
-  0x04, 0xc7, 0x23, 0xc3, 0x18, 0x96, 0x05, 0x9a, 0x07, 0x12, 0x80, 0xe2, 0xeb, 0x27, 0xb2, 0x75,
-  0x09, 0x83, 0x2c, 0x1a, 0x1b, 0x6e, 0x5a, 0xa0, 0x52, 0x3b, 0xd6, 0xb3, 0x29, 0xe3, 0x2f, 0x84,
-  0x53, 0xd1, 0x00, 0xed, 0x20, 0xfc, 0xb1, 0x5b, 0x6a, 0xcb, 0xbe, 0x39, 0x4a, 0x4c, 0x58, 0xcf,
-  0xd0, 0xef, 0xaa, 0xfb, 0x43, 0x4d, 0x33, 0x85, 0x45, 0xf9, 0x02, 0x7f, 0x50, 0x3c, 0x9f, 0xa8,
-  0x51, 0xa3, 0x40, 0x8f, 0x92, 0x9d, 0x38, 0xf5, 0xbc, 0xb6, 0xda, 0x21, 0x10, 0xff, 0xf3, 0xd2,
-  0xcd, 0x0c, 0x13, 0xec, 0x5f, 0x97, 0x44, 0x17, 0xc4, 0xa7, 0x7e, 0x3d, 0x64, 0x5d, 0x19, 0x73,
-  0x60, 0x81, 0x4f, 0xdc, 0x22, 0x2a, 0x90, 0x88, 0x46, 0xee, 0xb8, 0x14, 0xde, 0x5e, 0x0b, 0xdb,
-  0xe0, 0x32, 0x3a, 0x0a, 0x49, 0x06, 0x24, 0x5c, 0xc2, 0xd3, 0xac, 0x62, 0x91, 0x95, 0xe4, 0x79,
-  0xe7, 0xc8, 0x37, 0x6d, 0x8d, 0xd5, 0x4e, 0xa9, 0x6c, 0x56, 0xf4, 0xea, 0x65, 0x7a, 0xae, 0x08,
-  0xba, 0x78, 0x25, 0x2e, 0x1c, 0xa6, 0xb4, 0xc6, 0xe8, 0xdd, 0x74, 0x1f, 0x4b, 0xbd, 0x8b, 0x8a,
-  0x70, 0x3e, 0xb5, 0x66, 0x48, 0x03, 0xf6, 0x0e, 0x61, 0x35, 0x57, 0xb9, 0x86, 0xc1, 0x1d, 0x9e,
-  0xe1, 0xf8, 0x98, 0x11, 0x69, 0xd9, 0x8e, 0x94, 0x9b, 0x1e, 0x87, 0xe9, 0xce, 0x55, 0x28, 0xdf,
-  0x8c, 0xa1, 0x89, 0x0d, 0xbf, 0xe6, 0x42, 0x68, 0x41, 0x99, 0x2d, 0x0f, 0xb0, 0x54, 0xbb, 0x16];
-
-const ifRsbox = new Array(256);
-for (let i = 0; i < 256; i++) ifRsbox[ifSbox[i]] = i;
-const ifRcon = [0x8d, 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1b, 0x36];
-
-function ifExpandKey(key) {
-  const w = new Uint8Array(176);
-  for (let i = 0; i < 16; i++) w[i] = key[i];
-  for (let i = 16; i < 176; i += 4) {
-    let t = [w[i - 4], w[i - 3], w[i - 2], w[i - 1]];
-    if (i % 16 === 0) {
-      const rot = [t[1], t[2], t[3], t[0]];
-      t = [ifSbox[rot[0]] ^ ifRcon[i / 16], ifSbox[rot[1]], ifSbox[rot[2]], ifSbox[rot[3]]];
-    }
-    for (let j = 0; j < 4; j++) w[i + j] = w[i - 16 + j] ^ t[j];
-  }
-  return w;
-}
-
-function ifGmul(a, b) {
-  let p = 0;
-  for (let i = 0; i < 8; i++) {
-    if (b & 1) p ^= a;
-    const hi = a & 0x80;
-    a = (a << 1) & 0xff;
-    if (hi) a ^= 0x1b;
-    b >>= 1;
-  }
-  return p;
-}
-
-function ifInvMixColumns(s) {
-  for (let c = 0; c < 4; c++) {
-    const a = s[c], b = s[4 + c], d = s[8 + c], e = s[12 + c];
-    s[c] = ifGmul(a, 14) ^ ifGmul(b, 11) ^ ifGmul(d, 13) ^ ifGmul(e, 9);
-    s[4 + c] = ifGmul(a, 9) ^ ifGmul(b, 14) ^ ifGmul(d, 11) ^ ifGmul(e, 13);
-    s[8 + c] = ifGmul(a, 13) ^ ifGmul(b, 9) ^ ifGmul(d, 14) ^ ifGmul(e, 11);
-    s[12 + c] = ifGmul(a, 11) ^ ifGmul(b, 13) ^ ifGmul(d, 9) ^ ifGmul(e, 14);
-  }
-}
-
-function ifDecryptBlock(input, w) {
-  let state = new Uint8Array(16);
-  for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) state[r * 4 + c] = input[c * 4 + r];
-  for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) state[r * 4 + c] ^= w[160 + c * 4 + r];
-
-  for (let round = 9; round >= 1; round--) {
-    const t1 = state[4 + 3]; state[4 + 3] = state[4 + 2]; state[4 + 2] = state[4 + 1]; state[4 + 1] = state[4 + 0]; state[4 + 0] = t1;
-    const t2a = state[8 + 0], t2b = state[8 + 1]; state[8 + 0] = state[8 + 2]; state[8 + 1] = state[8 + 3]; state[8 + 2] = t2a; state[8 + 3] = t2b;
-    const t3 = state[12 + 0]; state[12 + 0] = state[12 + 1]; state[12 + 1] = state[12 + 2]; state[12 + 2] = state[12 + 3]; state[12 + 3] = t3;
-    for (let i = 0; i < 16; i++) state[i] = ifRsbox[state[i]];
-    for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) state[r * 4 + c] ^= w[round * 16 + c * 4 + r];
-    ifInvMixColumns(state);
-  }
-
-  const t1 = state[4 + 3]; state[4 + 3] = state[4 + 2]; state[4 + 2] = state[4 + 1]; state[4 + 1] = state[4 + 0]; state[4 + 0] = t1;
-  const t2a = state[8 + 0], t2b = state[8 + 1]; state[8 + 0] = state[8 + 2]; state[8 + 1] = state[8 + 3]; state[8 + 2] = t2a; state[8 + 3] = t2b;
-  const t3 = state[12 + 0]; state[12 + 0] = state[12 + 1]; state[12 + 1] = state[12 + 2]; state[12 + 2] = state[12 + 3]; state[12 + 3] = t3;
-  for (let i = 0; i < 16; i++) state[i] = ifRsbox[state[i]];
-  for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) state[r * 4 + c] ^= w[c * 4 + r];
-
-  const out = new Uint8Array(16);
-  for (let r = 0; r < 4; r++) for (let c = 0; c < 4; c++) out[c * 4 + r] = state[r * 4 + c];
-  return out;
-}
-
-function ifDecryptCBC16(cipher, key, iv) {
-  const w = ifExpandKey(key);
-  const block = ifDecryptBlock(cipher, w);
-  const out = new Uint8Array(16);
-  for (let i = 0; i < 16; i++) out[i] = block[i] ^ iv[i];
-  return Array.from(out).map(b => b.toString(16).padStart(2, '0')).join('');
-}
-
-function solveInfinityFreeChallenge(html) {
-  if (!html || typeof html !== 'string') return null;
-  const matchA = html.match(/a=toNumbers\("([a-f0-9]+)"\)/i) || html.match(/toNumbers\("([a-f0-9]+)"\)/i);
-  const matchB = html.match(/b=toNumbers\("([a-f0-9]+)"\)/i);
-  const matchC = html.match(/c=toNumbers\("([a-f0-9]+)"\)/i);
-  if (!matchA || !matchB || !matchC) return null;
-
-  const toBytes = hex => new Uint8Array(hex.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
-  return ifDecryptCBC16(toBytes(matchC[1]), toBytes(matchA[1]), toBytes(matchB[1]));
-}
-
-let cachedInfinityFreeCookie = '';
-
-// High-Speed Edge Shield Cache (Prevents InfinityFree Daily Entry Process exhaustion)
-const ifCache = {
-  entities: { data: null, lastFetched: 0 },
-  posts: { data: null, lastFetched: 0 },
-  nationalists: { data: null, lastFetched: 0 }
-};
-const IF_CACHE_TTL = 15 * 60 * 1000; // 15 minutes TTL for read requests
-
-// Live Bidirectional InfinityFree MySQL Bridge with Auto AES-Cookie Challenge Solving
-async function fetchFromInfinityFree(endpoint, method = 'GET', body = null, extraHeaders = {}) {
-  try {
-    const url = new URL(INFINITYFREE_BACKEND_URL);
-    const cleanEp = endpoint.replace(/^\/api\//, '').replace(/^\//, '');
-    url.searchParams.set('endpoint', cleanEp);
-    url.searchParams.set('key', EP_CLIENT_KEY);
-
-    const m = method.toUpperCase();
-    let forwardMethod = m;
-    if (['PUT', 'PATCH', 'DELETE'].includes(m)) {
-      forwardMethod = 'POST';
-      url.searchParams.set('_method', m);
-    }
-
-    const adminKey = extraHeaders['x-admin-key'] || extraHeaders['authorization']?.replace(/^Bearer\s+/i, '') || 'JaiHindBharatMataKiJai2024!';
-    if (cleanEp.startsWith('admin') && adminKey) {
-      url.searchParams.set('adminKey', adminKey);
-    }
-
-    const reqHeaders = {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-      'Accept': 'application/json, text/html, */*',
-      'X-App-Key': EP_CLIENT_KEY,
-      'X-Client-Key': EP_CLIENT_KEY,
-      ...extraHeaders
-    };
-    if (adminKey) {
-      reqHeaders['X-Admin-Key'] = adminKey;
-    }
-    if (cachedInfinityFreeCookie) {
-      reqHeaders['Cookie'] = `__test=${cachedInfinityFreeCookie}`;
-    }
-
-    const init = {
-      method: forwardMethod,
-      headers: reqHeaders
-    };
-    if (body) {
-      reqHeaders['Content-Type'] = 'application/json';
-      init.body = typeof body === 'string' ? body : JSON.stringify(body);
-    } else if (forwardMethod === 'POST') {
-      reqHeaders['Content-Type'] = 'application/json';
-      init.body = JSON.stringify({ _method: m, _action: m.toLowerCase() });
-    }
-
-    let res = await fetch(url.toString(), init);
-    let text = await res.text();
-
-    if (text.includes('slowAES') || text.includes('/aes.js')) {
-      const solved = solveInfinityFreeChallenge(text);
-      if (solved) {
-        cachedInfinityFreeCookie = solved;
-        reqHeaders['Cookie'] = `__test=${cachedInfinityFreeCookie}`;
-        res = await fetch(url.toString(), init);
-        text = await res.text();
-      }
-    }
-
-    try {
-      return JSON.parse(text);
-    } catch (e) {
-      return null;
-    }
-  } catch (err) {
-    return null;
-  }
-}
-
-// Backward-compatible alias
-const forwardToInfinityFree = fetchFromInfinityFree;
 
 // HTML 403 Defense Screen for Direct Browser Address Bar Navigation
 function renderShieldBlockPage(clientIp, path) {
@@ -669,6 +463,8 @@ function renderShieldBlockPage(clientIp, path) {
 // ===================================================================
 // 🌐 CLOUDFLARE PERSISTENT DATA ENGINE (D1 SQL + KV HYBRID)
 // ===================================================================
+let d1Initialized = false;
+
 class CloudflareDataStore {
   constructor(env) {
     this.env = env;
@@ -677,7 +473,7 @@ class CloudflareDataStore {
   }
 
   async init() {
-    if (this.d1) {
+    if (this.d1 && !d1Initialized) {
       try {
         await this.d1.exec(`
           CREATE TABLE IF NOT EXISTS entities (
@@ -769,8 +565,45 @@ class CloudflareDataStore {
             submitted_by_ip TEXT,
             created_at TEXT NOT NULL
           );
+          CREATE TABLE IF NOT EXISTS community_users (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            username TEXT NOT NULL UNIQUE,
+            email TEXT NOT NULL UNIQUE,
+            phone TEXT,
+            password_hash TEXT NOT NULL,
+            avatar_url TEXT,
+            verified_type TEXT DEFAULT 'none',
+            is_admin INTEGER NOT NULL DEFAULT 0,
+            is_banned INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+          );
+          CREATE TABLE IF NOT EXISTS community_channels (
+            id TEXT PRIMARY KEY,
+            creator_id TEXT NOT NULL,
+            creator_name TEXT NOT NULL,
+            creator_username TEXT NOT NULL,
+            name TEXT NOT NULL,
+            description TEXT,
+            join_token TEXT NOT NULL UNIQUE,
+            is_private INTEGER NOT NULL DEFAULT 0,
+            members_json TEXT,
+            pending_requests_json TEXT,
+            created_at TEXT NOT NULL
+          );
+          CREATE TABLE IF NOT EXISTS community_messages (
+            id TEXT PRIMARY KEY,
+            channel_id TEXT NOT NULL DEFAULT 'chan_public',
+            user_id TEXT NOT NULL,
+            username TEXT NOT NULL,
+            content TEXT NOT NULL,
+            image_url TEXT,
+            reactions_json TEXT,
+            created_at TEXT NOT NULL
+          );
         `);
-
+        d1Initialized = true;
       } catch (err) {
         console.error('D1 init error', err);
       }
@@ -789,29 +622,16 @@ class CloudflareDataStore {
   // --- ENTITIES & WANTED LEVEL RANKING ---
   async getEntities({ search, category, party, institution, sort } = {}) {
     let list = null;
-    const now = Date.now();
-    const isCacheExpired = (now - ifCache.entities.lastFetched) > IF_CACHE_TTL;
 
-    if (ifCache.entities.data && !isCacheExpired) {
-      list = ifCache.entities.data;
-    } else {
-      try {
-        const ifData = await fetchFromInfinityFree('entities', 'GET');
-        if (Array.isArray(ifData)) {
-          list = ifData;
-          memoryState.entities = ifData;
-          ifCache.entities = { data: ifData, lastFetched: now };
-        }
-      } catch (e) {}
-    }
-
-    if (list === null && this.d1) {
+    if (this.d1) {
       try {
         const { results } = await this.d1.prepare('SELECT * FROM entities').all();
         if (Array.isArray(results)) {
           list = results;
         }
-      } catch (e) {}
+      } catch (e) {
+        console.error('D1 getEntities error:', e);
+      }
     }
     if (list === null && this.kv) {
       try {
@@ -874,6 +694,17 @@ class CloudflareDataStore {
     return list;
   }
 
+  async getEntityById(id) {
+    const cleanId = String(id).trim();
+    if (this.d1) {
+      try {
+        const row = await this.d1.prepare('SELECT * FROM entities WHERE id = ?').bind(cleanId).first();
+        if (row) return row;
+      } catch (e) {}
+    }
+    return memoryState.entities.find(e => String(e.id).trim() === cleanId) || null;
+  }
+
   async addEntity(entity) {
     const cleanId = String(entity.id).trim();
     const existingIdx = memoryState.entities.findIndex(e => String(e.id).trim() === cleanId);
@@ -883,18 +714,32 @@ class CloudflareDataStore {
       memoryState.entities.unshift(entity);
     }
     memoryState.deletedEntityIds.delete(cleanId);
-    ifCache.entities = { data: memoryState.entities, lastFetched: Date.now() };
-
-    // Live sync to InfinityFree MySQL
-    try {
-      await fetchFromInfinityFree('admin/entities', 'POST', entity, { 'x-admin-key': 'JaiHindBharatMataKiJai2024!' });
-    } catch (e) {}
 
     if (this.d1) {
       try {
         await this.d1.prepare(`
           INSERT INTO entities (id, name, handle_x, handle_yt, handle_insta, contact_phone, contact_email, other_links, avatar_url, categories, party, institution, narrative, fact_check, proof_url, upvotes, rating_avg, rating_count, is_verified, submitted_by_ip, created_at, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET
+            name = excluded.name,
+            handle_x = excluded.handle_x,
+            handle_yt = excluded.handle_yt,
+            handle_insta = excluded.handle_insta,
+            contact_phone = excluded.contact_phone,
+            contact_email = excluded.contact_email,
+            other_links = excluded.other_links,
+            avatar_url = excluded.avatar_url,
+            categories = excluded.categories,
+            party = excluded.party,
+            institution = excluded.institution,
+            narrative = excluded.narrative,
+            fact_check = excluded.fact_check,
+            proof_url = excluded.proof_url,
+            upvotes = excluded.upvotes,
+            rating_avg = excluded.rating_avg,
+            rating_count = excluded.rating_count,
+            is_verified = excluded.is_verified,
+            updated_at = excluded.updated_at
         `).bind(
           entity.id, entity.name, entity.handle_x || '', entity.handle_yt || '', entity.handle_insta || '',
           entity.contact_phone || '', entity.contact_email || '', typeof entity.other_links === 'string' ? entity.other_links : JSON.stringify(entity.other_links || []),
@@ -903,7 +748,9 @@ class CloudflareDataStore {
           entity.upvotes || 1, entity.rating_avg || 5.0, entity.rating_count || 1, entity.is_verified || 0,
           entity.submitted_by_ip || '', entity.created_at || new Date().toISOString(), entity.updated_at || new Date().toISOString()
         ).run();
-      } catch (err) {}
+      } catch (err) {
+        console.error('D1 addEntity error:', err);
+      }
     }
     if (this.kv) {
       try {
@@ -923,12 +770,6 @@ class CloudflareDataStore {
       Object.assign(ent, updates);
       ent.updated_at = new Date().toISOString();
     }
-    ifCache.entities = { data: memoryState.entities, lastFetched: Date.now() };
-
-    // Live sync to InfinityFree MySQL
-    try {
-      await fetchFromInfinityFree(`admin/entities/${cleanId}`, 'PUT', updates, { 'x-admin-key': 'JaiHindBharatMataKiJai2024!' });
-    } catch (e) {}
 
     if (this.d1) {
       try {
@@ -941,10 +782,14 @@ class CloudflareDataStore {
           }
         }
         if (fields.length > 0) {
+          fields.push('updated_at = ?');
+          values.push(new Date().toISOString());
           values.push(cleanId);
           await this.d1.prepare(`UPDATE entities SET ${fields.join(', ')} WHERE id = ?`).bind(...values).run();
         }
-      } catch (e) {}
+      } catch (e) {
+        console.error('D1 updateEntity error:', e);
+      }
     }
     if (this.kv) {
       try {
@@ -968,18 +813,14 @@ class CloudflareDataStore {
     for (const k of Object.keys(memoryState.ratings)) {
       if (k.startsWith(`${cleanId}:`)) delete memoryState.ratings[k];
     }
-    ifCache.entities = { data: memoryState.entities, lastFetched: Date.now() };
-
-    // Live sync to InfinityFree MySQL
-    try {
-      await fetchFromInfinityFree(`admin/entities/${cleanId}`, 'DELETE', null, { 'x-admin-key': 'JaiHindBharatMataKiJai2024!' });
-    } catch (e) {}
 
     if (this.d1) {
       try {
         await this.d1.prepare('DELETE FROM entities WHERE id = ?').bind(cleanId).run();
         await this.d1.prepare('DELETE FROM propagandu_ratings WHERE entity_id = ?').bind(cleanId).run();
-      } catch (e) {}
+      } catch (e) {
+        console.error('D1 deleteEntity error:', e);
+      }
     }
     if (this.kv) {
       try {
@@ -998,15 +839,6 @@ class CloudflareDataStore {
 
     let avg = star;
     let count = 1;
-
-    // Live sync rating to InfinityFree MySQL
-    try {
-      const ifRes = await fetchFromInfinityFree(`propagandus/${entityId}/rating`, 'POST', { rating: star }, { 'x-forwarded-for': clientIp });
-      if (ifRes && typeof ifRes.rating_avg !== 'undefined') {
-        avg = parseFloat(ifRes.rating_avg);
-        count = parseInt(ifRes.rating_count, 10);
-      }
-    } catch (e) {}
 
     if (this.d1) {
       try {
@@ -1030,7 +862,18 @@ class CloudflareDataStore {
         await this.d1.prepare(`
           UPDATE entities SET rating_avg = ?, rating_count = ?, updated_at = ? WHERE id = ?
         `).bind(avg, count, now, entityId).run();
-      } catch (err) {}
+      } catch (err) {
+        console.error('D1 rateEntity error:', err);
+      }
+    } else {
+      const allForEnt = Object.entries(memoryState.ratings)
+        .filter(([k]) => k.startsWith(`${entityId}:`))
+        .map(([, v]) => v);
+      if (allForEnt.length > 0) {
+        count = allForEnt.length;
+        const sum = allForEnt.reduce((a, b) => a + b, 0);
+        avg = Math.round((sum / count) * 10) / 10;
+      }
     }
 
     if (this.kv) {
@@ -1038,15 +881,6 @@ class CloudflareDataStore {
         let ratingsMap = await this.kv.get('ratings', { type: 'json' }) || {};
         ratingsMap[`${entityId}:${clientIp}`] = star;
         await this.kv.put('ratings', JSON.stringify(ratingsMap));
-
-        const allForEnt = Object.entries(ratingsMap)
-          .filter(([k]) => k.startsWith(`${entityId}:`))
-          .map(([, v]) => v);
-        if (allForEnt.length > 0) {
-          count = allForEnt.length;
-          const sum = allForEnt.reduce((a, b) => a + b, 0);
-          avg = Math.round((sum / count) * 10) / 10;
-        }
 
         let ents = await this.kv.get('entities', { type: 'json' });
         if (Array.isArray(ents)) {
@@ -1064,7 +898,6 @@ class CloudflareDataStore {
     if (ent) {
       ent.rating_avg = avg;
       ent.rating_count = count;
-      ifCache.entities = { data: memoryState.entities, lastFetched: Date.now() };
     }
 
     return { success: true, user_rating: star, rating_avg: avg, rating_count: count };
@@ -1072,25 +905,13 @@ class CloudflareDataStore {
 
   // --- POSTS ---
   async getPosts() {
-    const now = Date.now();
-    const isCacheExpired = (now - ifCache.posts.lastFetched) > IF_CACHE_TTL;
-    if (ifCache.posts.data && !isCacheExpired) {
-      return ifCache.posts.data;
-    }
-    try {
-      const ifPosts = await fetchFromInfinityFree('posts', 'GET');
-      if (Array.isArray(ifPosts)) {
-        memoryState.posts = ifPosts;
-        ifCache.posts = { data: ifPosts, lastFetched: now };
-        return ifPosts;
-      }
-    } catch (e) {}
-
     if (this.d1) {
       try {
         const { results } = await this.d1.prepare('SELECT * FROM admin_posts ORDER BY is_pinned DESC, created_at DESC').all();
         if (Array.isArray(results)) return results;
-      } catch (e) {}
+      } catch (e) {
+        console.error('D1 getPosts error:', e);
+      }
     }
     if (this.kv) {
       try {
@@ -1103,12 +924,6 @@ class CloudflareDataStore {
 
   async addPost(post) {
     memoryState.posts.unshift(post);
-    ifCache.posts = { data: memoryState.posts, lastFetched: Date.now() };
-
-    // Live sync to InfinityFree MySQL
-    try {
-      await fetchFromInfinityFree('admin/posts', 'POST', post, { 'x-admin-key': 'JaiHindBharatMataKiJai2024!' });
-    } catch (e) {}
 
     if (this.d1) {
       try {
@@ -1119,7 +934,9 @@ class CloudflareDataStore {
           post.id, post.title, post.content, post.image_url || null, post.badge || 'DISPATCH',
           post.is_pinned ? 1 : 0, post.likes || 0, post.author || 'Om Kumar (Admin)', post.created_at || new Date().toISOString()
         ).run();
-      } catch (e) {}
+      } catch (e) {
+        console.error('D1 addPost error:', e);
+      }
     }
     if (this.kv) {
       try {
@@ -1133,13 +950,18 @@ class CloudflareDataStore {
   }
 
   async likePost(postId) {
+    let newLikes = 1;
     const post = memoryState.posts.find(p => p.id === postId);
-    const newLikes = (post?.likes || 0) + 1;
-    if (post) post.likes = newLikes;
+    if (post) {
+      post.likes = (post.likes || 0) + 1;
+      newLikes = post.likes;
+    }
 
     if (this.d1) {
       try {
         await this.d1.prepare('UPDATE admin_posts SET likes = likes + 1 WHERE id = ?').bind(postId).run();
+        const row = await this.d1.prepare('SELECT likes FROM admin_posts WHERE id = ?').bind(postId).first();
+        if (row && typeof row.likes === 'number') newLikes = row.likes;
       } catch (e) {}
     }
     if (this.kv) {
@@ -1158,24 +980,21 @@ class CloudflareDataStore {
   }
 
   async deletePost(postId) {
-    memoryState.posts = memoryState.posts.filter(p => String(p.id).trim() !== String(postId).trim());
-    ifCache.posts = { data: memoryState.posts, lastFetched: Date.now() };
-
-    // Live sync to InfinityFree MySQL
-    try {
-      await fetchFromInfinityFree(`admin/posts/${String(postId).trim()}`, 'DELETE', null, { 'x-admin-key': 'JaiHindBharatMataKiJai2024!' });
-    } catch (e) {}
+    const cleanId = String(postId).trim();
+    memoryState.posts = memoryState.posts.filter(p => String(p.id).trim() !== cleanId);
 
     if (this.d1) {
       try {
-        await this.d1.prepare('DELETE FROM admin_posts WHERE id = ?').bind(postId).run();
-      } catch (e) {}
+        await this.d1.prepare('DELETE FROM admin_posts WHERE id = ?').bind(cleanId).run();
+      } catch (e) {
+        console.error('D1 deletePost error:', e);
+      }
     }
     if (this.kv) {
       try {
         let posts = await this.kv.get('posts', { type: 'json' });
         if (Array.isArray(posts)) {
-          posts = posts.filter(p => String(p.id).trim() !== String(postId).trim());
+          posts = posts.filter(p => String(p.id).trim() !== cleanId);
           await this.kv.put('posts', JSON.stringify(posts));
         }
       } catch (e) {}
@@ -1184,25 +1003,13 @@ class CloudflareDataStore {
 
   // --- NATIONALISTS ---
   async getNationalists() {
-    const now = Date.now();
-    const isCacheExpired = (now - ifCache.nationalists.lastFetched) > IF_CACHE_TTL;
-    if (ifCache.nationalists.data && !isCacheExpired) {
-      return ifCache.nationalists.data.filter(n => !memoryState.deletedNationalistIds.has(n.id));
-    }
-    try {
-      const ifNats = await fetchFromInfinityFree('nationalist-influencers', 'GET');
-      if (Array.isArray(ifNats)) {
-        memoryState.nationalists = ifNats;
-        ifCache.nationalists = { data: ifNats, lastFetched: now };
-        return ifNats;
-      }
-    } catch (e) {}
-
     if (this.d1) {
       try {
         const { results } = await this.d1.prepare('SELECT * FROM nationalist_influencers ORDER BY upvotes DESC').all();
         if (Array.isArray(results)) return results;
-      } catch (e) {}
+      } catch (e) {
+        console.error('D1 getNationalists error:', e);
+      }
     }
     if (this.kv) {
       try {
@@ -1222,18 +1029,26 @@ class CloudflareDataStore {
       memoryState.nationalists.unshift(nat);
     }
     memoryState.deletedNationalistIds.delete(cleanId);
-    ifCache.nationalists = { data: memoryState.nationalists, lastFetched: Date.now() };
-
-    // Live sync to InfinityFree MySQL
-    try {
-      await fetchFromInfinityFree('admin/nationalist-influencers', 'POST', nat, { 'x-admin-key': 'JaiHindBharatMataKiJai2024!' });
-    } catch (e) {}
 
     if (this.d1) {
       try {
         await this.d1.prepare(`
           INSERT INTO nationalist_influencers (id, name, handle_x, handle_yt, handle_insta, other_links, avatar_url, category, categories, description, status, is_verified, upvotes, suggested_by_ip, created_at, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET
+            name = excluded.name,
+            handle_x = excluded.handle_x,
+            handle_yt = excluded.handle_yt,
+            handle_insta = excluded.handle_insta,
+            other_links = excluded.other_links,
+            avatar_url = excluded.avatar_url,
+            category = excluded.category,
+            categories = excluded.categories,
+            description = excluded.description,
+            status = excluded.status,
+            is_verified = excluded.is_verified,
+            upvotes = excluded.upvotes,
+            updated_at = excluded.updated_at
         `).bind(
           nat.id, nat.name, nat.handle_x || '', nat.handle_yt || '', nat.handle_insta || '',
           nat.other_links || '', nat.avatar_url || '', nat.category || 'Nationalist Creator',
@@ -1241,7 +1056,9 @@ class CloudflareDataStore {
           nat.is_verified || 1, nat.upvotes || 1, nat.suggested_by_ip || '',
           nat.created_at || new Date().toISOString(), nat.updated_at || new Date().toISOString()
         ).run();
-      } catch (e) {}
+      } catch (e) {
+        console.error('D1 addNationalist error:', e);
+      }
     }
     if (this.kv) {
       try {
@@ -1261,12 +1078,6 @@ class CloudflareDataStore {
       Object.assign(nat, updates);
       nat.updated_at = new Date().toISOString();
     }
-    ifCache.nationalists = { data: memoryState.nationalists, lastFetched: Date.now() };
-
-    // Live sync to InfinityFree MySQL
-    try {
-      await fetchFromInfinityFree(`admin/nationalist-influencers/${cleanId}`, 'PUT', updates, { 'x-admin-key': 'JaiHindBharatMataKiJai2024!' });
-    } catch (e) {}
 
     if (this.d1) {
       try {
@@ -1279,10 +1090,14 @@ class CloudflareDataStore {
           }
         }
         if (fields.length > 0) {
+          fields.push('updated_at = ?');
+          values.push(new Date().toISOString());
           values.push(cleanId);
           await this.d1.prepare(`UPDATE nationalist_influencers SET ${fields.join(', ')} WHERE id = ?`).bind(...values).run();
         }
-      } catch (e) {}
+      } catch (e) {
+        console.error('D1 updateNationalist error:', e);
+      }
     }
     if (this.kv) {
       try {
@@ -1303,17 +1118,13 @@ class CloudflareDataStore {
     const cleanId = String(id).trim();
     memoryState.nationalists = memoryState.nationalists.filter(n => String(n.id).trim() !== cleanId);
     memoryState.deletedNationalistIds.add(cleanId);
-    ifCache.nationalists = { data: memoryState.nationalists, lastFetched: Date.now() };
-
-    // Live sync to InfinityFree MySQL
-    try {
-      await fetchFromInfinityFree(`admin/nationalist-influencers/${cleanId}`, 'DELETE', null, { 'x-admin-key': 'JaiHindBharatMataKiJai2024!' });
-    } catch (e) {}
 
     if (this.d1) {
       try {
         await this.d1.prepare('DELETE FROM nationalist_influencers WHERE id = ?').bind(cleanId).run();
-      } catch (e) {}
+      } catch (e) {
+        console.error('D1 deleteNationalist error:', e);
+      }
     }
     if (this.kv) {
       try {
@@ -1326,19 +1137,107 @@ class CloudflareDataStore {
     }
   }
 
+  // --- REPORTS & FEATURE SUGGESTIONS ---
+  async addReport(report) {
+    memoryState.reports.unshift(report);
+    if (this.d1) {
+      try {
+        await this.d1.prepare(`
+          INSERT INTO reports (id, entity_id, reason, details, contact, ip_address, status, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `).bind(
+          report.id, report.entity_id || '', report.report_type || report.reason || 'Violation',
+          report.message || report.details || '', report.contact || null, report.reported_by_ip || report.ip_address || '',
+          report.status || 'pending', report.created_at || new Date().toISOString()
+        ).run();
+      } catch (e) {
+        console.error('D1 addReport error:', e);
+      }
+    }
+    return report;
+  }
+
+  async getReports() {
+    if (this.d1) {
+      try {
+        const { results } = await this.d1.prepare('SELECT * FROM reports ORDER BY created_at DESC').all();
+        if (Array.isArray(results) && results.length > 0) return results;
+      } catch (e) {}
+    }
+    return memoryState.reports;
+  }
+
+  async addFeatureSuggestion(sug) {
+    memoryState.featureSuggestions.unshift(sug);
+    if (this.d1) {
+      try {
+        await this.d1.prepare(`
+          INSERT INTO feature_suggestions (id, title, description, category, status, upvotes, submitted_by_ip, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `).bind(
+          sug.id, sug.name || sug.title || 'Citizen Suggestion', sug.message || sug.description || '',
+          sug.category || 'general', sug.status || 'pending', sug.upvotes || 0,
+          sug.ip_address || sug.submitted_by_ip || '', sug.created_at || new Date().toISOString()
+        ).run();
+      } catch (e) {
+        console.error('D1 addFeatureSuggestion error:', e);
+      }
+    }
+    return sug;
+  }
+
+  async getFeatureSuggestions() {
+    if (this.d1) {
+      try {
+        const { results } = await this.d1.prepare('SELECT * FROM feature_suggestions ORDER BY created_at DESC').all();
+        if (Array.isArray(results) && results.length > 0) return results;
+      } catch (e) {}
+    }
+    return memoryState.featureSuggestions;
+  }
+
+  async deleteFeatureSuggestion(id) {
+    const cleanId = String(id).trim();
+    memoryState.featureSuggestions = memoryState.featureSuggestions.filter(s => String(s.id).trim() !== cleanId);
+    if (this.d1) {
+      try {
+        await this.d1.prepare('DELETE FROM feature_suggestions WHERE id = ?').bind(cleanId).run();
+      } catch (e) {}
+    }
+  }
+
   async getStatus() {
+    let d1Connected = false;
+    let entitiesCount = memoryState.entities.length;
+    let postsCount = memoryState.posts.length;
+
+    if (this.d1) {
+      try {
+        const entRow = await this.d1.prepare('SELECT COUNT(*) as count FROM entities').first();
+        const postRow = await this.d1.prepare('SELECT COUNT(*) as count FROM admin_posts').first();
+        if (entRow && typeof entRow.count === 'number') {
+          entitiesCount = entRow.count;
+          d1Connected = true;
+        }
+        if (postRow && typeof postRow.count === 'number') {
+          postsCount = postRow.count;
+        }
+      } catch (e) {
+        console.error('D1 status check error:', e);
+      }
+    }
+
     return {
       status: 'ONLINE',
-      connected_engine: 'InfinityFree MySQL Cloud Database (Primary & Synchronized)',
-      infinityfree: {
-        active: true,
-        endpoint: INFINITYFREE_BACKEND_URL,
-        entities_count: memoryState.entities.length,
-        posts_count: memoryState.posts.length
-      },
-      memory: {
-        entities_count: memoryState.entities.length,
-        posts_count: memoryState.posts.length
+      connected_engine: d1Connected
+        ? 'Cloudflare D1 SQL Database (DB binding active)'
+        : (this.d1 ? 'Cloudflare D1 (Tables ready)' : (this.kv ? 'Cloudflare KV' : 'Edge Memory (D1 binding pending)')),
+      d1: {
+        active: !!this.d1,
+        connected: d1Connected,
+        binding: 'DB',
+        entities_count: entitiesCount,
+        posts_count: postsCount
       },
       server_time: new Date().toISOString()
     };
@@ -1403,13 +1302,15 @@ export default {
       });
     }
 
-    // Health Check
-    if (path === '/health' || path === '/api/health') {
+    // Health & Database Diagnostics Check
+    if (path === '/health' || path === '/api/health' || path === '/api/db-status') {
+      const dbStatus = await dbStore.getStatus();
       return new Response(JSON.stringify({
         status: 'ONLINE',
         platform: 'Cloudflare Worker',
         shield: 'Sovereign Patriot Shield Active',
         storage: env?.DB ? 'Cloudflare D1 SQL' : (env?.DATA_KV || env?.KV) ? 'Cloudflare KV' : 'Edge Memory',
+        database: dbStatus,
         slogan: 'Bharat Mata ki Jai 🇮🇳',
         timestamp: new Date().toISOString()
       }), { headers: JSON_HEADERS });
@@ -1720,9 +1621,20 @@ export default {
         memoryState.users.push(newUser);
         broadcastSSE({ type: 'USER_REGISTERED', user: { id: newUser.id, name: newUser.name, username: newUser.username, avatar_url: newUser.avatar_url } });
 
-        // Forward to InfinityFree MySQL in background
-        if (ctx?.waitUntil) {
-          ctx.waitUntil(forwardToInfinityFree(path, 'POST', body, {}));
+        if (dbStore.d1) {
+          try {
+            await dbStore.d1.prepare(`
+              INSERT INTO community_users (id, name, username, email, phone, password_hash, avatar_url, verified_type, is_admin, is_banned, created_at, updated_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              ON CONFLICT(username) DO UPDATE SET name = excluded.name, avatar_url = excluded.avatar_url, updated_at = excluded.updated_at
+            `).bind(
+              newUser.id, newUser.name, newUser.username, newUser.email, newUser.phone,
+              newUser.password_hash, newUser.avatar_url, newUser.verified_type,
+              newUser.is_admin, newUser.is_banned, newUser.created_at, newUser.created_at
+            ).run();
+          } catch (e) {
+            console.error('D1 user save error:', e);
+          }
         }
 
         const { password_hash, email: e, phone: p, ip_address: ip, ...safeUser } = newUser;
@@ -1739,6 +1651,16 @@ export default {
         const cleanIdentifier = (username || '').trim().toLowerCase();
 
         let foundUser = memoryState.users.find(u => u.username.toLowerCase() === cleanIdentifier || u.email.toLowerCase() === cleanIdentifier);
+
+        if (!foundUser && dbStore.d1) {
+          try {
+            const userRow = await dbStore.d1.prepare('SELECT * FROM community_users WHERE LOWER(username) = ? OR LOWER(email) = ?').bind(cleanIdentifier, cleanIdentifier).first();
+            if (userRow) {
+              foundUser = userRow;
+              memoryState.users.push(userRow);
+            }
+          } catch (e) {}
+        }
 
         if (!foundUser || foundUser.password_hash !== password) {
           return new Response(JSON.stringify({ error: 'Invalid credentials. Please verify your username and password.' }), { status: 401, headers: JSON_HEADERS });
@@ -1798,8 +1720,19 @@ export default {
 
         broadcastSSE({ type: 'NEW_MESSAGE', message: newMsg });
 
-        if (ctx?.waitUntil) {
-          ctx.waitUntil(forwardToInfinityFree(path, 'POST', body, {}));
+        if (dbStore.d1) {
+          try {
+            await dbStore.d1.prepare(`
+              INSERT INTO community_messages (id, channel_id, user_id, username, content, image_url, reactions_json, created_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            `).bind(
+              newMsg.id, newMsg.channel_id || 'chan_public', newMsg.user_id,
+              newMsg.username, newMsg.text || '', newMsg.gif_url || null,
+              JSON.stringify(newMsg.reactions || {}), new Date().toISOString()
+            ).run();
+          } catch (e) {
+            console.error('D1 message save error:', e);
+          }
         }
 
         return new Response(JSON.stringify({ success: true, message: newMsg }), { headers: JSON_HEADERS });
@@ -1839,8 +1772,10 @@ export default {
       const msgId = path.replace('/api/community/messages/', '').replace(/\/$/, '').trim();
       memoryState.messages = memoryState.messages.filter(m => String(m.id).trim() !== msgId);
       broadcastSSE({ type: 'DELETE_MESSAGE', message_id: msgId });
-      if (ctx?.waitUntil) {
-        ctx.waitUntil(forwardToInfinityFree(path, 'DELETE', null, { 'x-admin-key': request.headers.get('x-admin-key') || '' }));
+      if (dbStore.d1) {
+        try {
+          await dbStore.d1.prepare('DELETE FROM community_messages WHERE id = ?').bind(msgId).run();
+        } catch (e) {}
       }
       return new Response(JSON.stringify({ success: true, deletedId: msgId }), { headers: JSON_HEADERS });
     }
@@ -1867,8 +1802,17 @@ export default {
         memoryState.channels.push(newChan);
         broadcastSSE({ type: 'CHANNEL_CREATED', channel: newChan });
 
-        if (ctx?.waitUntil) {
-          ctx.waitUntil(forwardToInfinityFree(path, 'POST', body, {}));
+        if (dbStore.d1) {
+          try {
+            await dbStore.d1.prepare(`
+              INSERT INTO community_channels (id, creator_id, creator_name, creator_username, name, description, join_token, is_private, members_json, pending_requests_json, created_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `).bind(
+              newChan.id, newChan.creator_id, newChan.creator_name, newChan.creator_username,
+              newChan.name, newChan.description, newChan.join_token, newChan.is_private,
+              JSON.stringify(newChan.members), JSON.stringify(newChan.pending_requests), newChan.created_at
+            ).run();
+          } catch (e) {}
         }
 
         return new Response(JSON.stringify({ success: true, channel: newChan }), { headers: JSON_HEADERS });
@@ -1936,8 +1880,10 @@ export default {
       const user = memoryState.users.find(u => u.id === b.user_id);
       if (user) {
         user.verified_type = b.verified_type || 'none';
-        if (ctx?.waitUntil) {
-          ctx.waitUntil(forwardToInfinityFree(path, 'POST', b, { 'x-admin-key': request.headers.get('x-admin-key') || '' }));
+        if (dbStore.d1) {
+          try {
+            await dbStore.d1.prepare('UPDATE community_users SET verified_type = ?, updated_at = ? WHERE id = ?').bind(user.verified_type, new Date().toISOString(), user.id).run();
+          } catch (e) {}
         }
         return new Response(JSON.stringify({ success: true, user }), { headers: JSON_HEADERS });
       }
@@ -1950,15 +1896,22 @@ export default {
       const user = memoryState.users.find(u => u.id === b.user_id);
       if (user) {
         user.is_banned = b.is_banned ? 1 : 0;
+        if (dbStore.d1) {
+          try {
+            await dbStore.d1.prepare('UPDATE community_users SET is_banned = ?, updated_at = ? WHERE id = ?').bind(user.is_banned, new Date().toISOString(), user.id).run();
+          } catch (e) {}
+        }
       }
       if (b.user_id) {
         memoryState.messages = memoryState.messages.filter(m => m.user_id !== b.user_id);
+        if (dbStore.d1) {
+          try {
+            await dbStore.d1.prepare('DELETE FROM community_messages WHERE user_id = ?').bind(b.user_id).run();
+          } catch (e) {}
+        }
       }
       if (b.ip_address) {
         memoryState.blockedIps.add(b.ip_address);
-      }
-      if (ctx?.waitUntil) {
-        ctx.waitUntil(forwardToInfinityFree(path, 'POST', b, { 'x-admin-key': request.headers.get('x-admin-key') || '' }));
       }
       return new Response(JSON.stringify({ success: true, user }), { headers: JSON_HEADERS });
     }
@@ -2578,12 +2531,7 @@ export default {
           return new Response(JSON.stringify({ error: 'Message cannot be empty.' }), { status: 400, headers: JSON_HEADERS });
         }
 
-        memoryState.featureSuggestions.unshift(newSug);
-
-        if (ctx?.waitUntil) {
-          ctx.waitUntil(forwardToInfinityFree(path, 'POST', body, {}));
-        }
-
+        await dbStore.addFeatureSuggestion(newSug);
         return new Response(JSON.stringify({ success: true, suggestion: newSug }), { headers: JSON_HEADERS });
       } catch (e) {
         return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: JSON_HEADERS });
@@ -2592,7 +2540,8 @@ export default {
 
     if (path === '/api/admin/feature-suggestions' && (effectiveMethod === 'GET' || request.method === 'GET')) {
       if (!isAuthorizedAdmin(request, url)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
-      return new Response(JSON.stringify(memoryState.featureSuggestions), { headers: JSON_HEADERS });
+      const sugs = await dbStore.getFeatureSuggestions();
+      return new Response(JSON.stringify(sugs), { headers: JSON_HEADERS });
     }
 
     if (path.startsWith('/api/admin/feature-suggestions/') && path.endsWith('/read') && (effectiveMethod === 'POST' || request.method === 'POST')) {
@@ -2606,10 +2555,7 @@ export default {
     if (path.startsWith('/api/admin/feature-suggestions/') && !path.endsWith('/read') && (effectiveMethod === 'DELETE' || request.method === 'DELETE')) {
       if (!isAuthorizedAdmin(request, url)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
       const id = path.replace('/api/admin/feature-suggestions/', '').split('/')[0].trim();
-      memoryState.featureSuggestions = memoryState.featureSuggestions.filter(s => String(s.id).trim() !== String(id).trim());
-      if (ctx?.waitUntil) {
-        ctx.waitUntil(forwardToInfinityFree(path, 'DELETE', null, { 'x-admin-key': request.headers.get('x-admin-key') || '' }));
-      }
+      await dbStore.deleteFeatureSuggestion(id);
       return new Response(JSON.stringify({ success: true, deletedId: id }), { headers: JSON_HEADERS });
     }
 
@@ -2629,7 +2575,7 @@ export default {
           reported_by_ip: clientIp,
           created_at: new Date().toISOString()
         };
-        memoryState.reports.unshift(newRep);
+        await dbStore.addReport(newRep);
         return new Response(JSON.stringify({ success: true, report: newRep }), { headers: JSON_HEADERS });
       } catch (err) {
         return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: JSON_HEADERS });
@@ -2638,7 +2584,8 @@ export default {
 
     if (path === '/api/admin/reports' && (effectiveMethod === 'GET' || request.method === 'GET')) {
       if (!isAuthorizedAdmin(request, url)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
-      return new Response(JSON.stringify(memoryState.reports), { headers: JSON_HEADERS });
+      const reps = await dbStore.getReports();
+      return new Response(JSON.stringify(reps), { headers: JSON_HEADERS });
     }
 
     if (path.startsWith('/api/admin/reports/') && (effectiveMethod === 'PATCH' || effectiveMethod === 'PUT' || request.method === 'PATCH' || request.method === 'PUT')) {
@@ -2648,9 +2595,13 @@ export default {
       const rep = memoryState.reports.find(r => String(r.id).trim() === String(repId).trim());
       if (rep) {
         if (body.status) rep.status = body.status;
-        return new Response(JSON.stringify({ success: true, report: rep }), { headers: JSON_HEADERS });
       }
-      return new Response(JSON.stringify({ error: 'Report not found' }), { status: 404, headers: JSON_HEADERS });
+      if (dbStore.d1 && body.status) {
+        try {
+          await dbStore.d1.prepare('UPDATE reports SET status = ? WHERE id = ?').bind(body.status, repId).run();
+        } catch (e) {}
+      }
+      return new Response(JSON.stringify({ success: true, report: rep || { id: repId, status: body.status } }), { headers: JSON_HEADERS });
     }
 
     // -------------------------------------------------------------
@@ -2684,8 +2635,14 @@ export default {
         type: b.type || 'entity'
       };
       memoryState.categories.push(newCat);
-      if (ctx?.waitUntil) {
-        ctx.waitUntil(forwardToInfinityFree(path, 'POST', b, { 'x-admin-key': request.headers.get('x-admin-key') || '' }));
+      if (dbStore.d1) {
+        try {
+          await dbStore.d1.prepare(`
+            INSERT INTO categories (id, name, type, count, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(name) DO UPDATE SET type = excluded.type
+          `).bind(newCat.id, newCat.name, newCat.type, 0, new Date().toISOString()).run();
+        } catch (e) {}
       }
       return new Response(JSON.stringify({ success: true, category: newCat }), { headers: JSON_HEADERS });
     }
@@ -2694,8 +2651,10 @@ export default {
       if (!isAuthorizedAdmin(request, url)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
       const id = path.replace('/api/admin/categories/', '').split('/')[0].trim();
       memoryState.categories = memoryState.categories.filter(c => String(c.id).trim() !== String(id).trim());
-      if (ctx?.waitUntil) {
-        ctx.waitUntil(forwardToInfinityFree(path, 'DELETE', null, { 'x-admin-key': request.headers.get('x-admin-key') || '' }));
+      if (dbStore.d1) {
+        try {
+          await dbStore.d1.prepare('DELETE FROM categories WHERE id = ?').bind(id).run();
+        } catch (e) {}
       }
       return new Response(JSON.stringify({ success: true, deletedId: id }), { headers: JSON_HEADERS });
     }
@@ -2721,9 +2680,6 @@ export default {
         is_active: 1
       };
       memoryState.playlist.push(newTrack);
-      if (ctx?.waitUntil) {
-        ctx.waitUntil(forwardToInfinityFree(path, 'POST', b, { 'x-admin-key': request.headers.get('x-admin-key') || '' }));
-      }
       return new Response(JSON.stringify({ success: true, track: newTrack }), { headers: JSON_HEADERS });
     }
 
@@ -2742,9 +2698,6 @@ export default {
       if (!isAuthorizedAdmin(request, url)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
       const id = path.replace('/api/admin/playlist/', '').split('/')[0].trim();
       memoryState.playlist = memoryState.playlist.filter(p => String(p.id).trim() !== String(id).trim());
-      if (ctx?.waitUntil) {
-        ctx.waitUntil(forwardToInfinityFree(path, 'DELETE', null, { 'x-admin-key': request.headers.get('x-admin-key') || '' }));
-      }
       return new Response(JSON.stringify({ success: true, deletedId: id }), { headers: JSON_HEADERS });
     }
 
@@ -2883,9 +2836,6 @@ export default {
       const b = await request.json().catch(() => ({}));
       if (b.ip) {
         memoryState.blockedIps.add(b.ip);
-        if (ctx?.waitUntil) {
-          ctx.waitUntil(forwardToInfinityFree('/api/admin/block-ip', 'POST', b, { 'x-admin-key': request.headers.get('x-admin-key') || '' }));
-        }
       }
       return new Response(JSON.stringify({ success: true }), { headers: JSON_HEADERS });
     }
@@ -2896,9 +2846,6 @@ export default {
       const ip = b.ip || decodeURIComponent(path.replace('/api/admin/block-ip/', '').replace(/\/$/, '')).trim();
       if (ip) {
         memoryState.blockedIps.delete(ip);
-        if (ctx?.waitUntil) {
-          ctx.waitUntil(forwardToInfinityFree(`/api/admin/block-ip/${encodeURIComponent(ip)}`, 'DELETE', null, { 'x-admin-key': request.headers.get('x-admin-key') || '' }));
-        }
       }
       return new Response(JSON.stringify({ success: true }), { headers: JSON_HEADERS });
     }
