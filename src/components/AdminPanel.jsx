@@ -428,7 +428,6 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
 
     const cleanEmail = loginEmail.trim().toLowerCase();
     const cleanPass = loginPassword.trim();
-    const isMasterCreds = (cleanEmail === 'omkumar.working@gmail.com' && cleanPass === 'Q0gng04bk3');
 
     try {
       const res = await fetch('/api/admin/login', {
@@ -447,28 +446,10 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
         return;
       } else {
         const errData = await res.json().catch(() => ({}));
-        if (isMasterCreds) {
-          const fallbackToken = 'ep-adm-master-' + Math.random().toString(36).substring(2) + Date.now().toString(36);
-          setAdminToken(fallbackToken);
-          setIsAuthenticated(true);
-          localStorage.setItem('propagandus_admin_key', fallbackToken);
-          setLoginEmail('');
-          setLoginPassword('');
-          return;
-        }
         setLoginError(errData.error || 'Incorrect Administrator Email or Password.');
         return;
       }
     } catch (e) {
-      if (isMasterCreds) {
-        const fallbackToken = 'ep-adm-master-' + Math.random().toString(36).substring(2) + Date.now().toString(36);
-        setAdminToken(fallbackToken);
-        setIsAuthenticated(true);
-        localStorage.setItem('propagandus_admin_key', fallbackToken);
-        setLoginEmail('');
-        setLoginPassword('');
-        return;
-      }
       setLoginError('Server connection error. Please try again.');
     }
   };

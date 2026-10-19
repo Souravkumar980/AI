@@ -256,6 +256,18 @@ async function generateUploadHtml() {
     minifyJS: true
   });
 
+  // Security Cleaner: Ensure no database, PHP, or config files ever exist in dist/
+  const sensitiveFiles = ['upload.sql', 'db_config.php', 'api.php', '.env', 'data.db'];
+  for (const sf of sensitiveFiles) {
+    const p = path.join(distDir, sf);
+    if (fs.existsSync(p)) {
+      try {
+        fs.unlinkSync(p);
+        console.log(`🛡️ Security Cleaner: Removed sensitive file from dist: ${sf}`);
+      } catch (e) {}
+    }
+  }
+
   const distUploadPath = path.join(distDir, 'upload.html');
   const rootUploadPath = path.resolve(__dirname, '../upload.html');
   const publicUploadPath = path.resolve(__dirname, '../public/upload.html');

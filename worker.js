@@ -569,8 +569,11 @@ function broadcastSSE(data) {
   }
 }
 
+let currentEnv = null;
+
 // Helper: Verify administrator authorization token
-function isAuthorizedAdmin(request, url = null) {
+function isAuthorizedAdmin(request, url = null, env = null) {
+  const activeEnv = env || currentEnv;
   let key = (request.headers.get('x-admin-key') || request.headers.get('authorization') || '').trim();
   if (key.startsWith('Bearer ')) key = key.slice(7).trim();
   if (!key) {
@@ -580,9 +583,16 @@ function isAuthorizedAdmin(request, url = null) {
     } catch (e) {}
   }
   if (!key) return false;
+
+  const validKeys = [
+    activeEnv?.ADMIN_SECRET_KEY,
+    activeEnv?.ADMIN_PASSWORD,
+    'JaiHindBharatMataKiJai2024!',
+    'Q0gng04bk3'
+  ].filter(Boolean);
+
   return (
-    key === 'JaiHindBharatMataKiJai2024!' ||
-    key === 'Q0gng04bk3' ||
+    validKeys.includes(key) ||
     key.startsWith('ep-adm-') ||
     memoryState.activeAdminTokens.has(key)
   );
@@ -674,8 +684,588 @@ function renderShieldBlockPage(clientIp, path) {
 </html>`;
 }
 
+// ===================================================================
+// 🌐 CLOUDFLARE PERSISTENT DATA ENGINE (D1 SQL + KV HYBRID)
+// ===================================================================
+class CloudflareDataStore {
+  constructor(env) {
+    this.env = env;
+    this.d1 = env?.DB && typeof env.DB.prepare === 'function' ? env.DB : null;
+    this.kv = (env?.DATA_KV || env?.KV) && typeof (env.DATA_KV || env.KV).get === 'function' ? (env.DATA_KV || env.KV) : null;
+  }
+
+  async init() {
+    if (this.d1) {
+      try {
+        await this.d1.exec(`
+          CREATE TABLE IF NOT EXISTS entities (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            handle_x TEXT,
+            handle_yt TEXT,
+            handle_insta TEXT,
+            contact_phone TEXT,
+            contact_email TEXT,
+            other_links TEXT,
+            avatar_url TEXT,
+            categories TEXT NOT NULL DEFAULT 'General Disinformation',
+            party TEXT,
+            institution TEXT,
+            narrative TEXT NOT NULL,
+            fact_check TEXT,
+            proof_url TEXT,
+            upvotes INTEGER NOT NULL DEFAULT 1,
+            rating_avg REAL NOT NULL DEFAULT 5.0,
+            rating_count INTEGER NOT NULL DEFAULT 1,
+            is_verified INTEGER NOT NULL DEFAULT 1,
+            submitted_by_ip TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+          );
+          CREATE TABLE IF NOT EXISTS propagandu_ratings (
+            id TEXT PRIMARY KEY,
+            entity_id TEXT NOT NULL,
+            ip_address TEXT NOT NULL,
+            rating INTEGER NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(entity_id, ip_address)
+          );
+          CREATE TABLE IF NOT EXISTS admin_posts (
+            id TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            content TEXT NOT NULL,
+            image_url TEXT,
+            badge TEXT DEFAULT 'DISPATCH',
+            is_pinned INTEGER NOT NULL DEFAULT 0,
+            likes INTEGER NOT NULL DEFAULT 0,
+            author TEXT DEFAULT 'Om Kumar (Admin)',
+            created_at TEXT NOT NULL
+          );
+          CREATE TABLE IF NOT EXISTS nationalist_influencers (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            handle_x TEXT,
+            handle_yt TEXT,
+            handle_insta TEXT,
+            other_links TEXT,
+            avatar_url TEXT,
+            category TEXT DEFAULT 'Nationalist Creator',
+            categories TEXT,
+            description TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'approved',
+            is_verified INTEGER NOT NULL DEFAULT 1,
+            upvotes INTEGER NOT NULL DEFAULT 1,
+            suggested_by_ip TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+          );
+          CREATE TABLE IF NOT EXISTS categories (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE,
+            type TEXT NOT NULL DEFAULT 'propagandist',
+            count INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL
+          );
+          CREATE TABLE IF NOT EXISTS reports (
+            id TEXT PRIMARY KEY,
+            entity_id TEXT NOT NULL,
+            reason TEXT NOT NULL,
+            details TEXT NOT NULL,
+            contact TEXT,
+            ip_address TEXT,
+            status TEXT NOT NULL DEFAULT 'pending',
+            created_at TEXT NOT NULL
+          );
+          CREATE TABLE IF NOT EXISTS feature_suggestions (
+            id TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            description TEXT NOT NULL,
+            category TEXT DEFAULT 'general',
+            status TEXT NOT NULL DEFAULT 'pending',
+            upvotes INTEGER NOT NULL DEFAULT 0,
+            submitted_by_ip TEXT,
+            created_at TEXT NOT NULL
+          );
+        `);
+
+        const row = await this.d1.prepare('SELECT count(*) as cnt FROM entities').first();
+        if (row && Number(row.cnt) === 0 && memoryState.entities.length > 0) {
+          const stmts = memoryState.entities.map(e =>
+            this.d1.prepare(`INSERT OR IGNORE INTO entities (id, name, handle_x, handle_yt, handle_insta, contact_phone, contact_email, other_links, avatar_url, categories, party, institution, narrative, fact_check, proof_url, upvotes, rating_avg, rating_count, is_verified, submitted_by_ip, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+              .bind(e.id, e.name, e.handle_x || '', e.handle_yt || '', e.handle_insta || '', e.contact_phone || '', e.contact_email || '', typeof e.other_links === 'string' ? e.other_links : JSON.stringify(e.other_links || []), e.avatar_url || '', e.categories || '', e.party || null, e.institution || null, e.narrative || '', e.fact_check || null, e.proof_url || null, e.upvotes || 1, e.rating_avg || 5.0, e.rating_count || 1, e.is_verified || 1, e.submitted_by_ip || '', e.created_at || new Date().toISOString(), e.updated_at || new Date().toISOString())
+          );
+          if (stmts.length > 0) {
+            await this.d1.batch(stmts.slice(0, 50));
+          }
+        }
+
+        const postRow = await this.d1.prepare('SELECT count(*) as cnt FROM admin_posts').first();
+        if (postRow && Number(postRow.cnt) === 0 && memoryState.posts.length > 0) {
+          const postStmts = memoryState.posts.map(p =>
+            this.d1.prepare(`INSERT OR IGNORE INTO admin_posts (id, title, content, image_url, badge, is_pinned, likes, author, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+              .bind(p.id, p.title, p.content, p.image_url || null, p.badge || 'DISPATCH', p.is_pinned ? 1 : 0, p.likes || 0, p.author || 'Om Kumar (Admin)', p.created_at || new Date().toISOString())
+          );
+          if (postStmts.length > 0) {
+            await this.d1.batch(postStmts.slice(0, 50));
+          }
+        }
+      } catch (err) {
+        console.error('D1 init error', err);
+      }
+    } else if (this.kv) {
+      try {
+        const hasEntities = await this.kv.get('entities');
+        if (!hasEntities && memoryState.entities.length > 0) {
+          await this.kv.put('entities', JSON.stringify(memoryState.entities));
+        }
+        const hasPosts = await this.kv.get('posts');
+        if (!hasPosts && memoryState.posts.length > 0) {
+          await this.kv.put('posts', JSON.stringify(memoryState.posts));
+        }
+        const hasRatings = await this.kv.get('ratings');
+        if (!hasRatings) {
+          await this.kv.put('ratings', JSON.stringify(memoryState.ratings || {}));
+        }
+      } catch (err) {
+        console.error('KV init error', err);
+      }
+    }
+  }
+
+  // --- ENTITIES & WANTED LEVEL RANKING ---
+  async getEntities({ search, category, party, institution, sort } = {}) {
+    let list = [];
+    if (this.d1) {
+      try {
+        const { results } = await this.d1.prepare('SELECT * FROM entities').all();
+        if (Array.isArray(results) && results.length > 0) {
+          list = results;
+        }
+      } catch (e) {}
+    }
+    if (list.length === 0 && this.kv) {
+      try {
+        const data = await this.kv.get('entities', { type: 'json' });
+        if (Array.isArray(data) && data.length > 0) {
+          list = data;
+        }
+      } catch (e) {}
+    }
+    if (list.length === 0) {
+      list = memoryState.entities.filter(e => !memoryState.deletedEntityIds.has(e.id));
+    }
+
+    if (category && category !== 'All') {
+      list = list.filter(e => String(e.categories || '').toLowerCase().includes(category.toLowerCase()));
+    }
+    if (party && party !== 'All') {
+      list = list.filter(e => String(e.party || '').toLowerCase().includes(party.toLowerCase()));
+    }
+    if (institution && institution !== 'All') {
+      list = list.filter(e => String(e.institution || '').toLowerCase().includes(institution.toLowerCase()));
+    }
+    if (search && search.trim()) {
+      const q = search.trim().toLowerCase();
+      list = list.filter(e =>
+        String(e.name || '').toLowerCase().includes(q) ||
+        String(e.handle_x || '').toLowerCase().includes(q) ||
+        String(e.handle_yt || '').toLowerCase().includes(q) ||
+        String(e.handle_insta || '').toLowerCase().includes(q) ||
+        String(e.narrative || '').toLowerCase().includes(q)
+      );
+    }
+
+    const effectiveSort = sort || 'wanted';
+    list.sort((a, b) => {
+      if (effectiveSort === 'wanted') {
+        const avgA = typeof a.rating_avg === 'number' ? a.rating_avg : parseFloat(a.rating_avg || 0);
+        const avgB = typeof b.rating_avg === 'number' ? b.rating_avg : parseFloat(b.rating_avg || 0);
+        if (avgB !== avgA) return avgB - avgA;
+        const countA = parseInt(a.rating_count || 0, 10);
+        const countB = parseInt(b.rating_count || 0, 10);
+        if (countB !== countA) return countB - countA;
+        return (b.upvotes || 0) - (a.upvotes || 0);
+      }
+      if (effectiveSort === 'trending') {
+        const upA = a.upvotes || 0;
+        const upB = b.upvotes || 0;
+        if (upB !== upA) return upB - upA;
+        return (parseFloat(b.rating_avg || 0)) - (parseFloat(a.rating_avg || 0));
+      }
+      if (effectiveSort === 'newest') {
+        return new Date(b.created_at || 0) - new Date(a.created_at || 0);
+      }
+      if (effectiveSort === 'oldest') {
+        return new Date(a.created_at || 0) - new Date(b.created_at || 0);
+      }
+      return 0;
+    });
+
+    return list;
+  }
+
+  async addEntity(entity) {
+    memoryState.entities.unshift(entity);
+    if (this.d1) {
+      try {
+        await this.d1.prepare(`
+          INSERT INTO entities (id, name, handle_x, handle_yt, handle_insta, contact_phone, contact_email, other_links, avatar_url, categories, party, institution, narrative, fact_check, proof_url, upvotes, rating_avg, rating_count, is_verified, submitted_by_ip, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).bind(
+          entity.id, entity.name, entity.handle_x || '', entity.handle_yt || '', entity.handle_insta || '',
+          entity.contact_phone || '', entity.contact_email || '', typeof entity.other_links === 'string' ? entity.other_links : JSON.stringify(entity.other_links || []),
+          entity.avatar_url || '', entity.categories || '', entity.party || null, entity.institution || null,
+          entity.narrative || '', entity.fact_check || null, entity.proof_url || null,
+          entity.upvotes || 1, entity.rating_avg || 5.0, entity.rating_count || 1, entity.is_verified || 0,
+          entity.submitted_by_ip || '', entity.created_at || new Date().toISOString(), entity.updated_at || new Date().toISOString()
+        ).run();
+      } catch (err) {
+        console.error('D1 addEntity error', err);
+      }
+    }
+    if (this.kv) {
+      try {
+        let current = await this.kv.get('entities', { type: 'json' });
+        if (!Array.isArray(current)) current = [...memoryState.entities];
+        else current.unshift(entity);
+        await this.kv.put('entities', JSON.stringify(current));
+      } catch (err) {
+        console.error('KV addEntity error', err);
+      }
+    }
+    return entity;
+  }
+
+  async updateEntity(id, updates) {
+    const cleanId = String(id).trim();
+    const ent = memoryState.entities.find(e => String(e.id).trim() === cleanId);
+    if (ent) {
+      Object.assign(ent, updates);
+      ent.updated_at = new Date().toISOString();
+    }
+    if (this.d1) {
+      try {
+        const fields = [];
+        const values = [];
+        for (const [k, v] of Object.entries(updates)) {
+          if (k !== 'id') {
+            fields.push(`${k} = ?`);
+            values.push(typeof v === 'object' && v !== null ? JSON.stringify(v) : v);
+          }
+        }
+        if (fields.length > 0) {
+          values.push(cleanId);
+          await this.d1.prepare(`UPDATE entities SET ${fields.join(', ')} WHERE id = ?`).bind(...values).run();
+        }
+      } catch (e) {
+        console.error('D1 updateEntity error', e);
+      }
+    }
+    if (this.kv) {
+      try {
+        let ents = await this.kv.get('entities', { type: 'json' });
+        if (Array.isArray(ents)) {
+          const target = ents.find(e => String(e.id).trim() === cleanId);
+          if (target) {
+            Object.assign(target, updates);
+            target.updated_at = new Date().toISOString();
+            await this.kv.put('entities', JSON.stringify(ents));
+          }
+        }
+      } catch (e) {
+        console.error('KV updateEntity error', e);
+      }
+    }
+  }
+
+  async deleteEntity(id) {
+    const cleanId = String(id).trim();
+    memoryState.entities = memoryState.entities.filter(e => String(e.id).trim() !== cleanId);
+    memoryState.deletedEntityIds.add(cleanId);
+    for (const k of Object.keys(memoryState.ratings)) {
+      if (k.startsWith(`${cleanId}:`)) delete memoryState.ratings[k];
+    }
+    if (this.d1) {
+      try {
+        await this.d1.prepare('DELETE FROM entities WHERE id = ?').bind(cleanId).run();
+        await this.d1.prepare('DELETE FROM propagandu_ratings WHERE entity_id = ?').bind(cleanId).run();
+      } catch (e) {}
+    }
+    if (this.kv) {
+      try {
+        let ents = await this.kv.get('entities', { type: 'json' });
+        if (Array.isArray(ents)) {
+          ents = ents.filter(e => String(e.id).trim() !== cleanId);
+          await this.kv.put('entities', JSON.stringify(ents));
+        }
+      } catch (e) {}
+    }
+  }
+
+  async rateEntity(entityId, clientIp, rating) {
+    const star = Math.max(1, Math.min(5, parseInt(rating || 5, 10)));
+    memoryState.ratings[`${entityId}:${clientIp}`] = star;
+
+    let avg = star;
+    let count = 1;
+
+    if (this.d1) {
+      try {
+        const rateId = `rat_${entityId}_${clientIp}`.replace(/[^a-zA-Z0-9_]/g, '_');
+        const now = new Date().toISOString();
+        await this.d1.prepare(`
+          INSERT INTO propagandu_ratings (id, entity_id, ip_address, rating, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?)
+          ON CONFLICT(entity_id, ip_address) DO UPDATE SET rating = excluded.rating, updated_at = excluded.updated_at
+        `).bind(rateId, entityId, clientIp, star, now, now).run();
+
+        const stats = await this.d1.prepare(`
+          SELECT AVG(rating) as avg, COUNT(*) as count FROM propagandu_ratings WHERE entity_id = ?
+        `).bind(entityId).first();
+
+        if (stats) {
+          avg = Math.round((Number(stats.avg || star)) * 10) / 10;
+          count = Number(stats.count || 1);
+        }
+
+        await this.d1.prepare(`
+          UPDATE entities SET rating_avg = ?, rating_count = ?, updated_at = ? WHERE id = ?
+        `).bind(avg, count, now, entityId).run();
+      } catch (err) {
+        console.error('D1 rateEntity error', err);
+      }
+    }
+
+    if (this.kv) {
+      try {
+        let ratingsMap = await this.kv.get('ratings', { type: 'json' }) || {};
+        ratingsMap[`${entityId}:${clientIp}`] = star;
+        await this.kv.put('ratings', JSON.stringify(ratingsMap));
+
+        const allForEnt = Object.entries(ratingsMap)
+          .filter(([k]) => k.startsWith(`${entityId}:`))
+          .map(([, v]) => v);
+        if (allForEnt.length > 0) {
+          count = allForEnt.length;
+          const sum = allForEnt.reduce((a, b) => a + b, 0);
+          avg = Math.round((sum / count) * 10) / 10;
+        }
+
+        let ents = await this.kv.get('entities', { type: 'json' });
+        if (Array.isArray(ents)) {
+          const target = ents.find(e => e.id === entityId);
+          if (target) {
+            target.rating_avg = avg;
+            target.rating_count = count;
+            await this.kv.put('entities', JSON.stringify(ents));
+          }
+        }
+      } catch (err) {
+        console.error('KV rateEntity error', err);
+      }
+    }
+
+    const ent = memoryState.entities.find(e => e.id === entityId);
+    if (ent) {
+      ent.rating_avg = avg;
+      ent.rating_count = count;
+    }
+
+    return { success: true, user_rating: star, rating_avg: avg, rating_count: count };
+  }
+
+  // --- POSTS ---
+  async getPosts() {
+    if (this.d1) {
+      try {
+        const { results } = await this.d1.prepare('SELECT * FROM admin_posts ORDER BY is_pinned DESC, created_at DESC').all();
+        if (Array.isArray(results) && results.length > 0) return results;
+      } catch (e) {}
+    }
+    if (this.kv) {
+      try {
+        const data = await this.kv.get('posts', { type: 'json' });
+        if (Array.isArray(data) && data.length > 0) return data;
+      } catch (e) {}
+    }
+    return memoryState.posts;
+  }
+
+  async addPost(post) {
+    memoryState.posts.unshift(post);
+    if (this.d1) {
+      try {
+        await this.d1.prepare(`
+          INSERT INTO admin_posts (id, title, content, image_url, badge, is_pinned, likes, author, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).bind(
+          post.id, post.title, post.content, post.image_url || null, post.badge || 'DISPATCH',
+          post.is_pinned ? 1 : 0, post.likes || 0, post.author || 'Om Kumar (Admin)', post.created_at || new Date().toISOString()
+        ).run();
+      } catch (e) {
+        console.error('D1 addPost error', e);
+      }
+    }
+    if (this.kv) {
+      try {
+        let current = await this.kv.get('posts', { type: 'json' });
+        if (!Array.isArray(current)) current = [...memoryState.posts];
+        else current.unshift(post);
+        await this.kv.put('posts', JSON.stringify(current));
+      } catch (e) {
+        console.error('KV addPost error', e);
+      }
+    }
+    return post;
+  }
+
+  async likePost(postId) {
+    const post = memoryState.posts.find(p => p.id === postId);
+    const newLikes = (post?.likes || 0) + 1;
+    if (post) post.likes = newLikes;
+
+    if (this.d1) {
+      try {
+        await this.d1.prepare('UPDATE admin_posts SET likes = likes + 1 WHERE id = ?').bind(postId).run();
+      } catch (e) {}
+    }
+    if (this.kv) {
+      try {
+        let posts = await this.kv.get('posts', { type: 'json' });
+        if (Array.isArray(posts)) {
+          const p = posts.find(item => item.id === postId);
+          if (p) {
+            p.likes = (p.likes || 0) + 1;
+            await this.kv.put('posts', JSON.stringify(posts));
+          }
+        }
+      } catch (e) {}
+    }
+    return newLikes;
+  }
+
+  async deletePost(postId) {
+    memoryState.posts = memoryState.posts.filter(p => String(p.id).trim() !== String(postId).trim());
+    if (this.d1) {
+      try {
+        await this.d1.prepare('DELETE FROM admin_posts WHERE id = ?').bind(postId).run();
+      } catch (e) {}
+    }
+    if (this.kv) {
+      try {
+        let posts = await this.kv.get('posts', { type: 'json' });
+        if (Array.isArray(posts)) {
+          posts = posts.filter(p => String(p.id).trim() !== String(postId).trim());
+          await this.kv.put('posts', JSON.stringify(posts));
+        }
+      } catch (e) {}
+    }
+  }
+
+  // --- NATIONALISTS ---
+  async getNationalists() {
+    if (this.d1) {
+      try {
+        const { results } = await this.d1.prepare('SELECT * FROM nationalist_influencers ORDER BY upvotes DESC').all();
+        if (Array.isArray(results) && results.length > 0) return results;
+      } catch (e) {}
+    }
+    if (this.kv) {
+      try {
+        const data = await this.kv.get('nationalists', { type: 'json' });
+        if (Array.isArray(data) && data.length > 0) return data;
+      } catch (e) {}
+    }
+    return memoryState.nationalists.filter(n => !memoryState.deletedNationalistIds.has(n.id));
+  }
+
+  async addNationalist(nat) {
+    memoryState.nationalists.unshift(nat);
+    if (this.d1) {
+      try {
+        await this.d1.prepare(`
+          INSERT INTO nationalist_influencers (id, name, handle_x, handle_yt, handle_insta, other_links, avatar_url, category, categories, description, status, is_verified, upvotes, suggested_by_ip, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).bind(
+          nat.id, nat.name, nat.handle_x || '', nat.handle_yt || '', nat.handle_insta || '',
+          nat.other_links || '', nat.avatar_url || '', nat.category || 'Nationalist Creator',
+          nat.categories || '', nat.description || '', nat.status || 'approved',
+          nat.is_verified || 1, nat.upvotes || 1, nat.suggested_by_ip || '',
+          nat.created_at || new Date().toISOString(), nat.updated_at || new Date().toISOString()
+        ).run();
+      } catch (e) {}
+    }
+    if (this.kv) {
+      try {
+        let nats = await this.kv.get('nationalists', { type: 'json' });
+        if (!Array.isArray(nats)) nats = [...memoryState.nationalists];
+        else nats.unshift(nat);
+        await this.kv.put('nationalists', JSON.stringify(nats));
+      } catch (e) {}
+    }
+    return nat;
+  }
+
+  async getStatus() {
+    let d1Count = null;
+    let kvCount = null;
+    let d1Connected = false;
+    let kvConnected = false;
+
+    if (this.d1) {
+      try {
+        const row = await this.d1.prepare('SELECT count(*) as cnt FROM entities').first();
+        d1Count = row ? Number(row.cnt) : 0;
+        d1Connected = true;
+      } catch (e) {
+        d1Connected = false;
+      }
+    }
+
+    if (this.kv) {
+      try {
+        const ents = await this.kv.get('entities', { type: 'json' });
+        kvCount = Array.isArray(ents) ? ents.length : 0;
+        kvConnected = true;
+      } catch (e) {
+        kvConnected = false;
+      }
+    }
+
+    let activeEngine = 'Edge Memory (Volatile)';
+    if (d1Connected) activeEngine = 'Cloudflare D1 SQL (Persistent)';
+    else if (kvConnected) activeEngine = 'Cloudflare KV (Persistent)';
+
+    return {
+      status: 'ONLINE',
+      connected_engine: activeEngine,
+      d1: {
+        active: d1Connected,
+        entities_count: d1Count
+      },
+      kv: {
+        active: kvConnected,
+        entities_count: kvCount
+      },
+      memory: {
+        entities_count: memoryState.entities.length,
+        posts_count: memoryState.posts.length
+      },
+      server_time: new Date().toISOString(),
+      instructions: !d1Connected && !kvConnected
+        ? 'To persist database across all devices, create a D1 database with "npx wrangler d1 create exposed-propagandus-db" and bind it as "DB" in wrangler.json, or add a KV namespace bound as "DATA_KV" in Cloudflare Dashboard.'
+        : 'Database is securely connected and persistent across all devices.'
+    };
+  }
+}
+
 export default {
   async fetch(request, env, ctx) {
+    currentEnv = env;
+    const dbStore = new CloudflareDataStore(env);
+    await dbStore.init();
+
     // 1. Handle CORS Preflight (OPTIONS)
     if (request.method === 'OPTIONS') {
       return new Response(null, { status: 204, headers: CORS_HEADERS });
@@ -683,6 +1273,23 @@ export default {
 
     const url = new URL(request.url);
     let path = url.pathname;
+
+    // 🛡️ Security Guard: Block any direct access to sensitive database, config, or server files
+    if (
+      /\.(sql|php|env|config|bak|log|db|sqlite|md|sh)$/i.test(path) ||
+      path.startsWith('/.git') ||
+      path.startsWith('/.env') ||
+      path === '/upload.sql' ||
+      path === '/db_config.php' ||
+      path === '/api.php' ||
+      path === '/data.db'
+    ) {
+      return new Response(JSON.stringify({
+        error: 'ACCESS_DENIED',
+        message: '🛡️ Sovereign Security Guard: Direct access to database dumps, configuration files, and server scripts is strictly forbidden.',
+        status: 403
+      }), { status: 403, headers: JSON_HEADERS });
+    }
 
     // Normalization: Support both Clean REST (/api/...) and PHP style (/api.php?endpoint=...)
     if (path === '/api.php' || path === '/api') {
@@ -715,6 +1322,7 @@ export default {
         status: 'ONLINE',
         platform: 'Cloudflare Worker',
         shield: 'Sovereign Patriot Shield Active',
+        storage: env?.DB ? 'Cloudflare D1 SQL' : (env?.DATA_KV || env?.KV) ? 'Cloudflare KV' : 'Edge Memory',
         slogan: 'Bharat Mata ki Jai 🇮🇳',
         timestamp: new Date().toISOString()
       }), { headers: JSON_HEADERS });
@@ -722,7 +1330,11 @@ export default {
 
     // Serve static assets if running in Cloudflare Workers Assets mode
     if (env?.ASSETS && !path.startsWith('/api') && path !== '/api.php') {
-      return env.ASSETS.fetch(request);
+      let res = await env.ASSETS.fetch(request);
+      if (res.status === 404 && request.method === 'GET' && !path.startsWith('/assets/')) {
+        res = await env.ASSETS.fetch(new Request(new URL('/index.html', request.url), request));
+      }
+      return res;
     }
 
     if (path === '/') {
@@ -1562,34 +2174,13 @@ export default {
       const body = await request.json().catch(() => ({}));
       const rating = Math.max(1, Math.min(5, parseInt(body.rating || 5, 10)));
 
-      // Save user rating unique to IP
-      memoryState.ratings[`${entId}:${clientIp}`] = rating;
-
-      // Recalculate average and count
-      const allForEnt = Object.entries(memoryState.ratings)
-        .filter(([k]) => k.startsWith(`${entId}:`))
-        .map(([, v]) => v);
-
-      const count = allForEnt.length;
-      const sum = allForEnt.reduce((a, b) => a + b, 0);
-      const avg = count > 0 ? Math.round((sum / count) * 10) / 10 : rating;
-
-      const ent = memoryState.entities.find(e => e.id === entId);
-      if (ent) {
-        ent.rating_avg = avg;
-        ent.rating_count = Math.max(ent.rating_count || 0, count);
-      }
+      const result = await dbStore.rateEntity(entId, clientIp, rating);
 
       if (ctx?.waitUntil) {
         ctx.waitUntil(forwardToInfinityFree(path, 'POST', { rating }, {}));
       }
 
-      return new Response(JSON.stringify({
-        success: true,
-        user_rating: rating,
-        rating_avg: avg,
-        rating_count: ent?.rating_count || count
-      }), { headers: JSON_HEADERS });
+      return new Response(JSON.stringify(result), { headers: JSON_HEADERS });
     }
 
     if (path === '/api/my-ratings' && request.method === 'GET') {
@@ -1624,8 +2215,14 @@ export default {
     // PROPAGANDUS DATABASE (ENTITIES)
     // -------------------------------------------------------------
     if (path === '/api/entities' && (effectiveMethod === 'GET' || request.method === 'GET')) {
-      const activeEntities = memoryState.entities.filter(e => !memoryState.deletedEntityIds.has(e.id));
-      return new Response(JSON.stringify(activeEntities), { headers: JSON_HEADERS });
+      const search = url.searchParams.get('search') || '';
+      const category = url.searchParams.get('category') || 'All';
+      const party = url.searchParams.get('party') || 'All';
+      const institution = url.searchParams.get('institution') || 'All';
+      const sort = url.searchParams.get('sort') || 'wanted';
+
+      const entities = await dbStore.getEntities({ search, category, party, institution, sort });
+      return new Response(JSON.stringify(entities), { headers: JSON_HEADERS });
     }
 
     if (path === '/api/entities' && (effectiveMethod === 'POST' || request.method === 'POST')) {
@@ -1683,7 +2280,7 @@ export default {
           updated_at: new Date().toISOString()
         };
 
-        memoryState.entities.unshift(newEnt);
+        await dbStore.addEntity(newEnt);
 
         if (ctx?.waitUntil) {
           ctx.waitUntil(forwardToInfinityFree(path, 'POST', body, {}));
@@ -1796,7 +2393,8 @@ export default {
     // NATIONALIST INFLUENCERS DIRECTORY
     // -------------------------------------------------------------
     if (path === '/api/nationalist-influencers' && (effectiveMethod === 'GET' || request.method === 'GET')) {
-      const approved = memoryState.nationalists.filter(n => n.status === 'approved' && !memoryState.deletedNationalistIds.has(String(n.id).trim()));
+      const nationalists = await dbStore.getNationalists();
+      const approved = nationalists.filter(n => n.status === 'approved' && !memoryState.deletedNationalistIds.has(String(n.id).trim()));
       return new Response(JSON.stringify(approved), { headers: JSON_HEADERS });
     }
 
@@ -1819,7 +2417,7 @@ export default {
           created_at: new Date().toISOString()
         };
 
-        memoryState.nationalists.push(newNat);
+        await dbStore.addNationalist(newNat);
 
         if (ctx?.waitUntil) {
           ctx.waitUntil(forwardToInfinityFree(path, 'POST', body, {}));
@@ -2122,23 +2720,21 @@ export default {
     }
 
     if (path === '/api/posts' && (effectiveMethod === 'GET' || request.method === 'GET')) {
-      return new Response(JSON.stringify(memoryState.posts), { headers: JSON_HEADERS });
+      const posts = await dbStore.getPosts();
+      return new Response(JSON.stringify(posts), { headers: JSON_HEADERS });
     }
 
     if (path.startsWith('/api/posts/') && path.endsWith('/like') && (effectiveMethod === 'POST' || request.method === 'POST')) {
       const parts = path.split('/');
       const id = parts[3];
-      const post = memoryState.posts.find(p => p.id === id);
-      if (post) {
-        post.likes = (post.likes || 0) + 1;
-        return new Response(JSON.stringify({ success: true, likes: post.likes }), { headers: JSON_HEADERS });
-      }
-      return new Response(JSON.stringify({ error: 'Post not found' }), { status: 404, headers: JSON_HEADERS });
+      const likes = await dbStore.likePost(id);
+      return new Response(JSON.stringify({ success: true, likes }), { headers: JSON_HEADERS });
     }
 
     if (path === '/api/admin/posts' && (effectiveMethod === 'GET' || request.method === 'GET')) {
       if (!isAuthorizedAdmin(request, url)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
-      return new Response(JSON.stringify(memoryState.posts), { headers: JSON_HEADERS });
+      const posts = await dbStore.getPosts();
+      return new Response(JSON.stringify(posts), { headers: JSON_HEADERS });
     }
 
     if (path === '/api/admin/posts' && (effectiveMethod === 'POST' || request.method === 'POST')) {
@@ -2157,7 +2753,7 @@ export default {
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         };
-        memoryState.posts.unshift(newPost);
+        await dbStore.addPost(newPost);
         if (ctx?.waitUntil) {
           ctx.waitUntil(forwardToInfinityFree(path, 'POST', body, { 'x-admin-key': request.headers.get('x-admin-key') || '' }));
         }
@@ -2170,7 +2766,7 @@ export default {
     if (path.startsWith('/api/admin/posts/') && (effectiveMethod === 'DELETE' || request.method === 'DELETE')) {
       if (!isAuthorizedAdmin(request, url)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
       const id = path.replace('/api/admin/posts/', '').replace(/\/$/, '').trim();
-      memoryState.posts = memoryState.posts.filter(p => String(p.id).trim() !== String(id).trim());
+      await dbStore.deletePost(id);
       if (ctx?.waitUntil) {
         ctx.waitUntil(forwardToInfinityFree(path, 'DELETE', null, { 'x-admin-key': request.headers.get('x-admin-key') || '' }));
       }
@@ -2180,16 +2776,35 @@ export default {
     // -------------------------------------------------------------
     // ADMIN AUTHENTICATION, SECURITY & BACKUP
     // -------------------------------------------------------------
+    if (path === '/api/admin/db-status' && request.method === 'GET') {
+      const dbStatus = await dbStore.getStatus();
+      return new Response(JSON.stringify(dbStatus), { headers: JSON_HEADERS });
+    }
+
     if (path === '/api/admin/login' && request.method === 'POST') {
       try {
         const body = await request.json().catch(() => ({}));
         const { username, password, email } = body;
         const inputId = (username || email || '').trim().toLowerCase();
 
-        const isMaster = (inputId === 'omkumar' || inputId === 'omkumar.working@gmail.com') &&
-                         (password === 'Q0gng04bk3' || password === 'JaiHindBharatMataKiJai2024!');
+        const adminEmail = (env?.ADMIN_EMAIL || 'omkumar.working@gmail.com').toLowerCase();
+        const adminPass = env?.ADMIN_PASSWORD || 'Q0gng04bk3';
+        const masterSecret = env?.ADMIN_SECRET_KEY || 'JaiHindBharatMataKiJai2024!';
+        const expectedHash = env?.ADMIN_PASS_HASH || 'd4796bfb65915ffadeb54dce0b8ad18c1fa8637c32d6e4dd157a68030baad269';
 
-        if (isMaster) {
+        let passwordValid = false;
+        if (password === adminPass || password === masterSecret) {
+          passwordValid = true;
+        } else if (password) {
+          const hashedInput = await computeSha256(password);
+          if (hashedInput === expectedHash) {
+            passwordValid = true;
+          }
+        }
+
+        const isUserValid = (inputId === 'omkumar' || inputId === adminEmail);
+
+        if (isUserValid && passwordValid) {
           const token = 'ep-adm-' + Date.now() + '-' + Math.random().toString(36).substr(2, 8);
           memoryState.activeAdminTokens.add(token);
           return new Response(JSON.stringify({
@@ -2197,16 +2812,16 @@ export default {
             token,
             adminToken: token,
             user: {
-              name: 'Om Kumar',
-              email: 'omkumar.working@gmail.com',
+              name: 'Om Kumar (Admin)',
+              email: adminEmail,
               role: 'SUPER_ADMIN'
             }
           }), { headers: JSON_HEADERS });
         }
 
-        return new Response(JSON.stringify({ error: 'Invalid admin credentials' }), { status: 401, headers: JSON_HEADERS });
+        return new Response(JSON.stringify({ error: 'Invalid administrator credentials' }), { status: 401, headers: JSON_HEADERS });
       } catch (err) {
-        return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: JSON_HEADERS });
+        return new Response(JSON.stringify({ error: 'Authentication failed' }), { status: 500, headers: JSON_HEADERS });
       }
     }
 

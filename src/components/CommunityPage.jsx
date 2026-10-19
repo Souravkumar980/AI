@@ -1159,24 +1159,6 @@ export default function CommunityPage({ onSelectPage }) {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        if (cred === 'omkumar.working@gmail.com' && pass === 'Q0gng04bk3') {
-          const adminUser = users.find(u => u.email?.toLowerCase() === 'omkumar.working@gmail.com') || {
-            id: 'usr_admin',
-            name: 'Om Kumar (Commander)',
-            username: 'omkumar_admin',
-            email: 'omkumar.working@gmail.com',
-            phone: '9876543210',
-            avatar_url: 'https://api.dicebear.com/7.x/bottts/svg?seed=OmKumarAdmin',
-            verified_type: 'influencer',
-            is_admin: true,
-            created_at: '2025-01-01'
-          };
-          setCurrentUser(adminUser);
-          setIsAuthModalOpen(false);
-          setLoginForm({ emailOrUsername: '', password: '' });
-          alert('✓ Welcome Commander Om Kumar. Full administrative community control active.');
-          return;
-        }
         setLoginError(data.error || 'Login failed.');
         return;
       }
@@ -1184,28 +1166,10 @@ export default function CommunityPage({ onSelectPage }) {
       setIsAuthModalOpen(false);
       setLoginForm({ emailOrUsername: '', password: '' });
       if (data.user?.is_admin) {
-        alert('✓ Welcome Commander Om Kumar. Full administrative community control active.');
+        alert('✓ Welcome Commander. Administrative community control active.');
       }
       return;
     } catch (err) {
-      if (cred === 'omkumar.working@gmail.com' && pass === 'Q0gng04bk3') {
-        const adminUser = users.find(u => u.email?.toLowerCase() === 'omkumar.working@gmail.com') || {
-          id: 'usr_admin',
-          name: 'Om Kumar (Commander)',
-          username: 'omkumar_admin',
-          email: 'omkumar.working@gmail.com',
-          phone: '9876543210',
-          avatar_url: 'https://api.dicebear.com/7.x/bottts/svg?seed=OmKumarAdmin',
-          verified_type: 'influencer',
-          is_admin: true,
-          created_at: '2025-01-01'
-        };
-        setCurrentUser(adminUser);
-        setIsAuthModalOpen(false);
-        setLoginForm({ emailOrUsername: '', password: '' });
-        alert('✓ Welcome Commander Om Kumar. Full administrative community control active.');
-        return;
-      }
       setLoginError('Unable to connect to authentication server. Please check your network.');
       return;
     }

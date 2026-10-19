@@ -22,11 +22,12 @@ import {
 } from 'lucide-react';
 import { playRandomPropaganduSound } from '../utils/audioPlayer';
 import { useLanguage } from '../context/LanguageContext';
+import WantedRatingModal from './WantedRatingModal';
 
-// Wanted Level 5-Star Rating Component
-function WantedRatingBar({ entityId, ratingAvg, ratingCount, myRating, onRate }) {
-  const currentAvg = ratingAvg !== undefined && ratingAvg !== null ? Number(ratingAvg) : 5.0;
-  const totalCount = Number(ratingCount) || 0;
+// Wanted Level Rating Widget with button to open Wanted Rating pop-up menu
+function WantedRatingWidget({ entity, myRating, onOpenRatingModal }) {
+  const currentAvg = entity?.rating_avg !== undefined && entity?.rating_avg !== null ? Number(entity.rating_avg) : 5.0;
+  const totalCount = Number(entity?.rating_count) || 0;
   const userScore = myRating !== undefined && myRating !== null ? Number(myRating) : null;
 
   return (
@@ -35,35 +36,29 @@ function WantedRatingBar({ entityId, ratingAvg, ratingCount, myRating, onRate })
       onClick={(e) => e.stopPropagation()}
     >
       <div className="flex items-center gap-1.5 flex-wrap">
-        <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-popRed bg-red-100 border border-red-300 px-1.5 py-0.5 rounded font-mono">
-          WANTED LEVEL
+        <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-popRed bg-red-100 border border-red-300 px-1.5 py-0.5 rounded font-mono flex items-center gap-1">
+          <span>🚨</span> WANTED LEVEL
         </span>
-        <div className="flex items-center gap-0.5">
-          {[1, 2, 3, 4, 5].map((star) => {
-            const isFilled = userScore ? star <= userScore : star <= Math.round(currentAvg);
-            return (
-              <button
-                key={star}
-                type="button"
-                onClick={() => onRate(entityId, star)}
-                title={`Rate Wanted Level ${star} / 5 stars`}
-                className="p-0.5 text-base sm:text-lg hover:scale-125 transition-transform active:scale-95 cursor-pointer leading-none"
-              >
-                <span className={isFilled ? 'text-amber-500 drop-shadow-[0_1px_2px_rgba(245,158,11,0.6)]' : 'text-gray-300'}>
-                  ★
-                </span>
-              </button>
-            );
-          })}
-        </div>
-        <span className="font-mono font-black text-xs text-black">
-          {currentAvg.toFixed(1)}
+        <span className="inline-flex items-center gap-0.5 text-xs font-mono font-black text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+          <span>★</span> {currentAvg.toFixed(1)}
+        </span>
+        <span className="text-[10px] text-gray-500 font-bold">
+          👥 {totalCount} {totalCount === 1 ? 'user rated' : 'users rated'}
         </span>
       </div>
-      <div className="flex items-center gap-2 text-[10px] text-gray-500 font-bold">
-        <span>👥 {totalCount} {totalCount === 1 ? 'user rated' : 'users rated'}</span>
+
+      <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+        <button
+          type="button"
+          onClick={() => onOpenRatingModal(entity)}
+          className="inline-flex items-center gap-1 px-2.5 py-1 bg-gradient-to-r from-red-600 to-amber-500 hover:from-amber-500 hover:to-red-600 text-white font-comic font-black text-[11px] sm:text-xs uppercase tracking-wider rounded-lg border border-black shadow-[1.5px_1.5px_0px_#000] active:scale-95 transition-all cursor-pointer"
+          title={`Rate Wanted Level for ${entity?.name || 'Propagandu'}`}
+        >
+          <span>⭐</span>
+          <span>{userScore ? `Wanted Rating: ${userScore}★ (Update)` : 'Give Wanted Rating'}</span>
+        </button>
         {userScore && (
-          <span className="text-tirangaGreen font-mono font-black">
+          <span className="text-[10px] text-tirangaGreen font-mono font-black">
             (Your Vote: {userScore}★)
           </span>
         )}
@@ -96,7 +91,8 @@ export default function PropagandusDatabase({ onOpenSubmit, onOpenReport, onOpen
   }, [reloadTrigger]);
   const [selectedParty, setSelectedParty] = useState('All');
   const [selectedInstitution, setSelectedInstitution] = useState('All');
-  const [sortBy, setSortBy] = useState('trending');
+  const [sortBy, setSortBy] = useState('wanted');
+  const [ratingModalEntity, setRatingModalEntity] = useState(null);
   // View mode: 'profile' (default, icons only) vs 'detailed'
   const [viewMode, setViewMode] = useState('profile');
   const [userRatings, setUserRatings] = useState(() => {
@@ -203,16 +199,25 @@ export default function PropagandusDatabase({ onOpenSubmit, onOpenReport, onOpen
       });
       const data = await res.json();
       if (data.success) {
+        const newAvg = data.rating_avg !== undefined ? data.rating_avg : undefined;
+        const newCount = data.rating_count !== undefined ? data.rating_count : undefined;
+
         setEntities(prev => prev.map(item => {
           if (item.id === id) {
             return {
               ...item,
-              rating_avg: data.rating_avg !== undefined ? data.rating_avg : item.rating_avg,
-              rating_count: data.rating_count !== undefined ? data.rating_count : item.rating_count
+              rating_avg: newAvg !== undefined ? newAvg : item.rating_avg,
+              rating_count: newCount !== undefined ? newCount : item.rating_count
             };
           }
           return item;
         }));
+
+        setRatingModalEntity(prev => (prev && prev.id === id ? {
+          ...prev,
+          rating_avg: newAvg !== undefined ? newAvg : prev.rating_avg,
+          rating_count: newCount !== undefined ? newCount : prev.rating_count
+        } : prev));
       }
     } catch (e) {
       console.error('Rating error', e);
@@ -403,6 +408,7 @@ export default function PropagandusDatabase({ onOpenSubmit, onOpenReport, onOpen
                 onChange={(e) => setSortBy(e.target.value)}
                 className="w-full px-2.5 py-1.5 bg-gray-50 border border-gray-300 rounded-lg text-xs font-semibold focus:outline-none"
               >
+                <option value="wanted">🔥 Most Wanted (Highest Rating)</option>
                 <option value="trending">Most Upvoted</option>
                 <option value="newest">Newest First</option>
                 <option value="oldest">Oldest First</option>
@@ -548,14 +554,12 @@ export default function PropagandusDatabase({ onOpenSubmit, onOpenReport, onOpen
                       })}
                     </div>
 
-                    {/* Wanted Rating 5-Star Bar */}
+                    {/* Wanted Rating Widget */}
                     <div className="pt-0.5">
-                      <WantedRatingBar
-                        entityId={item.id}
-                        ratingAvg={item.rating_avg}
-                        ratingCount={item.rating_count}
+                      <WantedRatingWidget
+                        entity={item}
                         myRating={myRating}
-                        onRate={handleRateEntity}
+                        onOpenRatingModal={setRatingModalEntity}
                       />
                     </div>
                   </div>
@@ -730,12 +734,10 @@ export default function PropagandusDatabase({ onOpenSubmit, onOpenReport, onOpen
 
                   {/* Card Bottom: Wanted Level Rating & Evidence Link (Share Option Completely Removed) */}
                   <div className="p-3 bg-gray-50 border-t border-gray-200 flex items-center justify-between gap-2 flex-wrap">
-                    <WantedRatingBar
-                      entityId={item.id}
-                      ratingAvg={item.rating_avg}
-                      ratingCount={item.rating_count}
+                    <WantedRatingWidget
+                      entity={item}
                       myRating={myRating}
-                      onRate={handleRateEntity}
+                      onOpenRatingModal={setRatingModalEntity}
                     />
 
                     {item.proof_url && (
@@ -757,6 +759,15 @@ export default function PropagandusDatabase({ onOpenSubmit, onOpenReport, onOpen
             })}
           </div>
         )}
+
+        {/* Wanted Rating Modal Popup */}
+        <WantedRatingModal
+          isOpen={!!ratingModalEntity}
+          onClose={() => setRatingModalEntity(null)}
+          entity={ratingModalEntity}
+          userRating={ratingModalEntity ? userRatings[ratingModalEntity.id] : null}
+          onRate={handleRateEntity}
+        />
 
       </div>
     </section>

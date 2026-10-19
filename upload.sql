@@ -197,7 +197,7 @@ CREATE TABLE `admin_users` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 INSERT INTO `admin_users` (`id`, `email`, `password_hash`, `created_at`, `updated_at`)
-VALUES ('admin-primary', 'omkumar.working@gmail.com', 'Q0gng04bk3', '2026-10-14T00:00:00.000Z', '2026-10-14T00:00:00.000Z')
+VALUES ('admin-primary', 'omkumar.working@gmail.com', 'd4796bfb65915ffadeb54dce0b8ad18c1fa8637c32d6e4dd157a68030baad269', '2026-10-14T00:00:00.000Z', '2026-10-14T00:00:00.000Z')
 ON DUPLICATE KEY UPDATE `email` = VALUES(`email`), `password_hash` = VALUES(`password_hash`);
 
 -- -------------------------------------------------------------
@@ -373,7 +373,7 @@ CREATE TABLE `community_users` (
 
 -- Seed Master Admin Om Kumar in community_users
 INSERT INTO `community_users` (`id`, `name`, `username`, `email`, `phone`, `password_hash`, `avatar_url`, `verified_type`, `is_admin`, `is_banned`, `created_at`, `updated_at`)
-VALUES ('usr_admin', 'Om Kumar (Commander)', 'omkumar_admin', 'omkumar.working@gmail.com', '9876543210', 'Q0gng04bk3', 'https://api.dicebear.com/7.x/bottts/svg?seed=OmKumarAdmin', 'influencer', 1, 0, '2025-01-01 00:00:00', '2025-01-01 00:00:00');
+VALUES ('usr_admin', 'Om Kumar (Commander)', 'omkumar_admin', 'omkumar.working@gmail.com', '9876543210', 'd4796bfb65915ffadeb54dce0b8ad18c1fa8637c32d6e4dd157a68030baad269', 'https://api.dicebear.com/7.x/bottts/svg?seed=OmKumarAdmin', 'influencer', 1, 0, '2025-01-01 00:00:00', '2025-01-01 00:00:00');
 
 -- -------------------------------------------------------------
 -- Table: community_messages (Public & Private Channel Messages)

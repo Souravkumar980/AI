@@ -7,7 +7,7 @@ import { LanguageProvider } from './context/LanguageContext';
 // Dynamic Cloudflare / Remote API Base URL Interceptor & Sovereign Shield Protection
 export const EP_CLIENT_KEY = 'ep-client-v1-bharat-first-2024';
 export const EP_SHIELD_SALT = 'BharatSovereignShield2026!Protected@Edge';
-export const DEFAULT_API_BASE_URL = 'https://exposed-api.exposedpropagandu.workers.dev';
+export const DEFAULT_API_BASE_URL = '';
 
 // High-speed non-blocking synchronous cryptographic rolling hash
 export function generateShieldHash(str) {
