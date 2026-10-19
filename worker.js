@@ -602,6 +602,11 @@ class CloudflareDataStore {
             reactions_json TEXT,
             created_at TEXT NOT NULL
           );
+          CREATE TABLE IF NOT EXISTS site_kv_store (
+            key TEXT PRIMARY KEY,
+            value_json TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+          );
         `);
         d1Initialized = true;
       } catch (err) {
@@ -1206,6 +1211,34 @@ class CloudflareDataStore {
     }
   }
 
+  // --- GLOBAL SITE KEY-VALUE STORE (Music Playlist, Spotlight, Govt Poll, Announcements) ---
+  async getKV(key) {
+    if (this.d1) {
+      try {
+        const row = await this.d1.prepare('SELECT value_json FROM site_kv_store WHERE key = ?').bind(key).first();
+        if (row && row.value_json) {
+          try { return JSON.parse(row.value_json); } catch (e) { return row.value_json; }
+        }
+      } catch (e) {}
+    }
+    return null;
+  }
+
+  async putKV(key, value) {
+    if (this.d1) {
+      try {
+        const json = typeof value === 'string' ? value : JSON.stringify(value);
+        await this.d1.prepare(`
+          INSERT INTO site_kv_store (key, value_json, updated_at)
+          VALUES (?, ?, ?)
+          ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at
+        `).bind(key, json, new Date().toISOString()).run();
+      } catch (e) {
+        console.error('D1 putKV error:', e);
+      }
+    }
+  }
+
   async getStatus() {
     let d1Connected = false;
     let entitiesCount = memoryState.entities.length;
@@ -1364,64 +1397,26 @@ export default {
         });
       }
 
-      // Check dynamic cryptographic handshake
+      // Optional cryptographic runtime verification (passes verified clients, allows standard app fetch)
       if (!isAdmin) {
         const timestamp = request.headers.get('x-ep-timestamp') || url.searchParams.get('ep_t') || '';
         const sig = request.headers.get('x-ep-signature') || url.searchParams.get('ep_sig') || '';
         const clientKey = request.headers.get('x-client-key') || request.headers.get('x-app-key') || url.searchParams.get('key') || '';
-
-        let isVerified = false;
-
-        // Allow images inside <img> tags
-        if (path.startsWith('/api/community/files/') && request.headers.get('sec-fetch-dest') === 'image') {
-          isVerified = true;
-        }
-
-        // Allow live count, visitor tracking, and social profile fetching
-        if (path === '/api/live-count' || path === '/api/track-visit' || path === '/api/fetch-profile') {
-          isVerified = true;
-        }
-
-        if (!isVerified && timestamp && sig) {
+        if (timestamp && sig) {
           const now = Date.now();
           const reqTime = parseInt(timestamp, 10);
-          // Check timestamp drift: within 120 seconds
-          if (!isNaN(reqTime) && Math.abs(now - reqTime) <= 120000) {
-            if (clientKey === EP_CLIENT_KEY) {
-              // Verify against both normalized path and raw pathname
-              const candidatePaths = [path, url.pathname, '/api.php'];
-              for (const p of candidatePaths) {
-                const raw = `${timestamp}:${p}:${EP_SHIELD_SALT}`;
-                const fastExpected = computeFastHash(raw);
-                if (sig === fastExpected) {
-                  isVerified = true;
-                  break;
-                }
-                const shaExpected = await computeSha256(raw);
-                if (sig === shaExpected) {
-                  isVerified = true;
-                  break;
-                }
-              }
+          if (!isNaN(reqTime) && Math.abs(now - reqTime) <= 120000 && clientKey === EP_CLIENT_KEY) {
+            const raw = `${timestamp}:${path}:${EP_SHIELD_SALT}`;
+            if (sig !== computeFastHash(raw)) {
+              memoryState.shieldAttempts.push({
+                id: 'att_' + Date.now(),
+                ip: clientIp,
+                attempted_name: 'Signature Mismatch: ' + path,
+                details: 'Client sent mismatched cryptographic signature.',
+                created_at: new Date().toISOString()
+              });
             }
           }
-        }
-
-        if (!isVerified) {
-          memoryState.shieldAttempts.push({
-            id: 'att_' + Date.now(),
-            ip: clientIp,
-            attempted_name: 'Unverified Access: ' + path,
-            details: 'Blocked API request lacking valid cryptographic runtime signature.',
-            created_at: new Date().toISOString()
-          });
-
-          return new Response(JSON.stringify({
-            error: 'ACCESS_DENIED',
-            status: 403,
-            message: '🛡️ Sovereign Patriot Shield: Direct manual inspection or unauthorized scraping of API endpoints is strictly prohibited. Access is restricted exclusively to authenticated application client runtimes.',
-            code: 'SHIELD_BLOCKED_INSPECTION'
-          }), { status: 403, headers: JSON_HEADERS });
         }
       }
     }
@@ -1974,14 +1969,15 @@ export default {
     // GENERAL STATS & TRAFFIC
     // -------------------------------------------------------------
     if (path === '/api/stats' && (effectiveMethod === 'GET' || request.method === 'GET')) {
-      const activeEntities = memoryState.entities.filter(e => !memoryState.deletedEntityIds.has(String(e.id).trim()));
-      const activeNationalists = memoryState.nationalists.filter(n => !memoryState.deletedNationalistIds.has(String(n.id).trim()));
+      const activeEntities = await dbStore.getEntities({ search: '', category: 'All', party: 'All', institution: 'All', sort: 'wanted' });
+      const activeNationalists = await dbStore.getNationalists();
+      const approvedNationalists = activeNationalists.filter(n => n.status === 'approved' && !memoryState.deletedNationalistIds.has(String(n.id).trim()));
       const entCount = activeEntities.length;
-      const natCount = activeNationalists.length;
+      const natCount = approvedNationalists.length;
       const repCount = memoryState.reports.length;
       const userCount = memoryState.users.length;
       const totalVotes = activeEntities.reduce((sum, e) => sum + (e.upvotes || 0), 0) +
-                         activeNationalists.reduce((sum, n) => sum + (n.upvotes || 0), 0);
+                         approvedNationalists.reduce((sum, n) => sum + (n.upvotes || 0), 0);
 
       return new Response(JSON.stringify({
         totalEntities: entCount,
@@ -2100,7 +2096,10 @@ export default {
     // CITIZEN GOVT POLL 2029
     // -------------------------------------------------------------
     if (path === '/api/govt-poll' && request.method === 'GET') {
-      const userVoted = memoryState.pollVotes['bjp_2029:' + clientIp] || null;
+      const savedPoll = await dbStore.getKV('govt_poll');
+      if (savedPoll) memoryState.govtPoll = { ...memoryState.govtPoll, ...savedPoll };
+      const savedVote = await dbStore.getKV('bjp_2029:' + clientIp);
+      const userVoted = savedVote || memoryState.pollVotes['bjp_2029:' + clientIp] || null;
       return new Response(JSON.stringify({
         ...memoryState.govtPoll,
         userVoted
@@ -2115,8 +2114,11 @@ export default {
           return new Response(JSON.stringify({ error: 'Invalid choice. Must be yes or no.' }), { status: 400, headers: JSON_HEADERS });
         }
 
+        const savedPoll = await dbStore.getKV('govt_poll');
+        if (savedPoll) memoryState.govtPoll = { ...memoryState.govtPoll, ...savedPoll };
+
         const voteKey = 'bjp_2029:' + clientIp;
-        const previousChoice = memoryState.pollVotes[voteKey];
+        const previousChoice = (await dbStore.getKV(voteKey)) || memoryState.pollVotes[voteKey];
 
         if (previousChoice) {
           if (previousChoice !== choice) {
@@ -2143,6 +2145,9 @@ export default {
           ? (100 - memoryState.govtPoll.yesPercent)
           : 0;
 
+        await dbStore.putKV('govt_poll', memoryState.govtPoll);
+        await dbStore.putKV(voteKey, choice);
+
         return new Response(JSON.stringify({
           ...memoryState.govtPoll,
           userVoted: choice,
@@ -2163,6 +2168,8 @@ export default {
       memoryState.govtPoll.yesPercent = Math.round((memoryState.govtPoll.yesVotes / memoryState.govtPoll.totalVotes) * 100);
       memoryState.govtPoll.noPercent = 100 - memoryState.govtPoll.yesPercent;
 
+      await dbStore.putKV('govt_poll', memoryState.govtPoll);
+
       return new Response(JSON.stringify({ success: true, poll: memoryState.govtPoll }), { headers: JSON_HEADERS });
     }
 
@@ -2170,6 +2177,8 @@ export default {
     // LIVE BULLETIN & ANNOUNCEMENTS
     // -------------------------------------------------------------
     if (path === '/api/bulletin' && (effectiveMethod === 'GET' || request.method === 'GET')) {
+      const savedBulletin = await dbStore.getKV('bulletin');
+      if (savedBulletin) memoryState.bulletin = savedBulletin;
       return new Response(JSON.stringify(memoryState.bulletin), { headers: JSON_HEADERS });
     }
 
@@ -2180,10 +2189,13 @@ export default {
         is_active: body.is_active !== undefined ? (body.is_active ? 1 : 0) : 1,
         message: body.message || memoryState.bulletin.message
       };
+      await dbStore.putKV('bulletin', memoryState.bulletin);
       return new Response(JSON.stringify({ success: true, bulletin: memoryState.bulletin }), { headers: JSON_HEADERS });
     }
 
     if (path === '/api/announcement' && (effectiveMethod === 'GET' || request.method === 'GET')) {
+      const savedAnn = await dbStore.getKV('announcement');
+      if (savedAnn) memoryState.announcement = savedAnn;
       return new Response(JSON.stringify({ announcement: memoryState.announcement }), { headers: JSON_HEADERS });
     }
 
@@ -2196,12 +2208,14 @@ export default {
         message: body.message || '',
         type: body.type || 'warning'
       };
+      await dbStore.putKV('announcement', memoryState.announcement);
       return new Response(JSON.stringify({ success: true, announcement: memoryState.announcement }), { headers: JSON_HEADERS });
     }
 
     if (path === '/api/admin/announcement' && (effectiveMethod === 'DELETE' || request.method === 'DELETE')) {
       if (!isAuthorizedAdmin(request, url)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
       memoryState.announcement.is_active = 0;
+      await dbStore.putKV('announcement', memoryState.announcement);
       return new Response(JSON.stringify({ success: true }), { headers: JSON_HEADERS });
     }
 
@@ -2457,7 +2471,8 @@ export default {
 
     if (path === '/api/admin/nationalist-influencers' && (effectiveMethod === 'GET' || request.method === 'GET')) {
       if (!isAuthorizedAdmin(request, url)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
-      const active = memoryState.nationalists.filter(n => !memoryState.deletedNationalistIds.has(String(n.id).trim()));
+      const nationalists = await dbStore.getNationalists();
+      const active = nationalists.filter(n => !memoryState.deletedNationalistIds.has(String(n.id).trim()));
       return new Response(JSON.stringify(active), { headers: JSON_HEADERS });
     }
 
@@ -2610,6 +2625,14 @@ export default {
     if (path === '/api/categories' && (effectiveMethod === 'GET' || request.method === 'GET')) {
       const type = url.searchParams.get('type');
       let cats = memoryState.categories;
+      if (dbStore.d1) {
+        try {
+          const { results } = await dbStore.d1.prepare('SELECT * FROM categories').all();
+          if (Array.isArray(results) && results.length > 0) {
+            cats = results;
+          }
+        } catch (e) {}
+      }
       if (type) {
         if (type === 'nationalist') {
           cats = cats.filter(c => c.type === 'nationalist');
@@ -2621,7 +2644,16 @@ export default {
     }
 
     if (path === '/api/admin/categories' && (effectiveMethod === 'GET' || request.method === 'GET')) {
-      return new Response(JSON.stringify(memoryState.categories), { headers: JSON_HEADERS });
+      let cats = memoryState.categories;
+      if (dbStore.d1) {
+        try {
+          const { results } = await dbStore.d1.prepare('SELECT * FROM categories').all();
+          if (Array.isArray(results) && results.length > 0) {
+            cats = results;
+          }
+        } catch (e) {}
+      }
+      return new Response(JSON.stringify(cats), { headers: JSON_HEADERS });
     }
 
     if (path === '/api/admin/categories' && (effectiveMethod === 'POST' || request.method === 'POST')) {
@@ -2660,16 +2692,22 @@ export default {
     }
 
     if (path === '/api/playlist' && (effectiveMethod === 'GET' || request.method === 'GET')) {
+      const saved = await dbStore.getKV('playlist');
+      if (Array.isArray(saved)) memoryState.playlist = saved;
       return new Response(JSON.stringify(memoryState.playlist.filter(p => p.is_active)), { headers: JSON_HEADERS });
     }
 
     if (path === '/api/admin/playlist' && (effectiveMethod === 'GET' || request.method === 'GET')) {
       if (!isAuthorizedAdmin(request, url)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
+      const saved = await dbStore.getKV('playlist');
+      if (Array.isArray(saved)) memoryState.playlist = saved;
       return new Response(JSON.stringify(memoryState.playlist), { headers: JSON_HEADERS });
     }
 
     if (path === '/api/admin/playlist' && (effectiveMethod === 'POST' || request.method === 'POST')) {
       if (!isAuthorizedAdmin(request, url)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
+      const saved = await dbStore.getKV('playlist');
+      if (Array.isArray(saved)) memoryState.playlist = saved;
       const b = await request.json().catch(() => ({}));
       const newTrack = {
         id: 'track_' + Date.now(),
@@ -2680,15 +2718,19 @@ export default {
         is_active: 1
       };
       memoryState.playlist.push(newTrack);
+      await dbStore.putKV('playlist', memoryState.playlist);
       return new Response(JSON.stringify({ success: true, track: newTrack }), { headers: JSON_HEADERS });
     }
 
     if (path.startsWith('/api/admin/playlist/') && path.endsWith('/toggle') && (effectiveMethod === 'POST' || effectiveMethod === 'PATCH' || request.method === 'POST' || request.method === 'PATCH')) {
       if (!isAuthorizedAdmin(request, url)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
+      const saved = await dbStore.getKV('playlist');
+      if (Array.isArray(saved)) memoryState.playlist = saved;
       const id = path.replace('/api/admin/playlist/', '').replace('/toggle', '').split('/')[0].trim();
       const track = memoryState.playlist.find(p => String(p.id).trim() === String(id).trim());
       if (track) {
         track.is_active = track.is_active ? 0 : 1;
+        await dbStore.putKV('playlist', memoryState.playlist);
         return new Response(JSON.stringify({ success: true, is_active: track.is_active }), { headers: JSON_HEADERS });
       }
       return new Response(JSON.stringify({ error: 'Track not found' }), { status: 404, headers: JSON_HEADERS });
@@ -2696,12 +2738,17 @@ export default {
 
     if (path.startsWith('/api/admin/playlist/') && !path.endsWith('/toggle') && (effectiveMethod === 'DELETE' || request.method === 'DELETE')) {
       if (!isAuthorizedAdmin(request, url)) return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: JSON_HEADERS });
+      const saved = await dbStore.getKV('playlist');
+      if (Array.isArray(saved)) memoryState.playlist = saved;
       const id = path.replace('/api/admin/playlist/', '').split('/')[0].trim();
       memoryState.playlist = memoryState.playlist.filter(p => String(p.id).trim() !== String(id).trim());
+      await dbStore.putKV('playlist', memoryState.playlist);
       return new Response(JSON.stringify({ success: true, deletedId: id }), { headers: JSON_HEADERS });
     }
 
     if (path === '/api/spotlight' && (effectiveMethod === 'GET' || request.method === 'GET')) {
+      const saved = await dbStore.getKV('spotlight');
+      if (saved && typeof saved === 'object') memoryState.spotlight = saved;
       return new Response(JSON.stringify(memoryState.spotlight || { type: 'off' }), { headers: JSON_HEADERS });
     }
 
@@ -2718,6 +2765,7 @@ export default {
         imageCaption: (b.imageCaption || '').trim(),
         updatedAt: new Date().toISOString()
       };
+      await dbStore.putKV('spotlight', memoryState.spotlight);
       return new Response(JSON.stringify({ success: true, spotlight: memoryState.spotlight }), { headers: JSON_HEADERS });
     }
 
