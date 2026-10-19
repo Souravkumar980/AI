@@ -6014,7 +6014,7 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
                   <label className="block font-black uppercase text-gray-700 mb-1">Creator / Outlet / Name *</label>
                   <input
                     type="text"
-                    placeholder="e.g. Ravish Kumar, Dhruv Rathee..."
+                    placeholder="e.g. Creator / Channel / Outlet Name..."
                     value={directPropForm.name}
                     onChange={(e) => setDirectPropForm({ ...directPropForm, name: e.target.value })}
                     className="w-full px-3 py-2 bg-gray-50 border border-black rounded font-bold"

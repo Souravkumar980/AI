@@ -81,143 +81,8 @@ const memoryState = {
   ratings: {}, // 'entity_id:ip' -> number (1-5)
   deletedEntityIds: new Set(),
   deletedNationalistIds: new Set(),
-  nationalists: [
-    {
-      id: "nat-1792053208024-0ac2i5",
-      name: "Civicpop",
-      handle_x: "",
-      handle_yt: "",
-      handle_insta: "civicpop_",
-      avatar_url: "https://unavatar.io/instagram/civicpop_",
-      category: "Solo Influencer, Journalist",
-      description: "This Page Help a Lot to expose the CJP",
-      status: "approved",
-      is_verified: 1,
-      upvotes: 18,
-      suggested_by_ip: "152.59.143.146",
-      created_at: "2026-10-15T08:33:28.024Z",
-      updated_at: "2026-10-15T08:33:40.059Z",
-      other_links: ""
-    },
-    {
-      id: "nat-1791987122410-e6mqab",
-      name: "OM",
-      handle_x: "",
-      handle_yt: "OMzWorld",
-      handle_insta: "",
-      avatar_url: "https://unavatar.io/youtube/@OMzWorld",
-      category: "Satire & Counter-Narrative",
-      description: "Right wing supporter",
-      status: "approved",
-      is_verified: 1,
-      upvotes: 48,
-      suggested_by_ip: "152.59.147.155",
-      created_at: "2026-10-14T14:12:02.410Z",
-      updated_at: "2026-10-14T14:41:06.319Z",
-      other_links: ""
-    },
-    {
-      id: "nat-1791987078602-gy998s",
-      name: "Abhi and Niyu",
-      handle_x: "",
-      handle_yt: "AbhiandNiyu",
-      handle_insta: "abhiandniyu",
-      avatar_url: "https://unavatar.io/youtube/@AbhiandNiyu",
-      category: "Defence & Geopolitics",
-      description: "Abhi and Niyu is best youtuber of India celebrating positive stories and critical geopolitics.",
-      status: "approved",
-      is_verified: 1,
-      upvotes: 34,
-      suggested_by_ip: "152.59.147.155",
-      created_at: "2026-10-14T14:11:18.602Z",
-      updated_at: "2026-10-14T14:12:11.732Z",
-      other_links: ""
-    },
-    {
-      id: "nat-1791987017706-9ajn7y",
-      name: "The Sham Sharma Show",
-      handle_x: "",
-      handle_yt: "ShamSharmaShow",
-      handle_insta: "",
-      avatar_url: "https://unavatar.io/youtube/@ShamSharmaShow",
-      category: "Satire & Counter-Narrative",
-      description: "Countering anti-India propaganda through brilliant political satire and facts.",
-      status: "approved",
-      is_verified: 1,
-      upvotes: 29,
-      suggested_by_ip: "152.59.147.155",
-      created_at: "2026-10-14T14:10:17.706Z",
-      updated_at: "2026-10-14T14:12:12.602Z",
-      other_links: ""
-    },
-    {
-      id: "nat-1791982549625-b87u4c",
-      name: "Littichokha Up",
-      handle_x: "",
-      handle_yt: "",
-      handle_insta: "littichokha_up_",
-      avatar_url: "https://unavatar.io/instagram/littichokha_up_",
-      category: "Dharmic Culture & History",
-      description: "Preserving and promoting traditional Indian culture, history and ground reality.",
-      status: "approved",
-      is_verified: 1,
-      upvotes: 19,
-      suggested_by_ip: "152.59.147.155",
-      created_at: "2026-10-14T12:55:49.625Z",
-      updated_at: "2026-10-14T12:56:04.684Z",
-      other_links: ""
-    }
-  ],
-  entities: [
-    {
-      id: "prop-1792055606680-f3dcn9",
-      name: "Dhruv Rathee",
-      handle_x: "",
-      handle_yt: "Dhruvrathee",
-      handle_insta: "dhruvrathee",
-      avatar_url: "https://unavatar.io/youtube/@Dhruvrathee",
-      categories: "[\"Social Media\",\"Political Party\",\"Institutions\"]",
-      party: "Aam Aadmi Party (AAP) – National Capital Region (Delhi) and Punjab",
-      institution: "Foreign Narrative Coordination",
-      narrative: "Consistently coordinates one-sided anti-India narratives and political propaganda masquerading as objective fact-checks.",
-      fact_check: "Extensive video archives fact-checked by independent observers exposing selective omission of facts.",
-      proof_url: "https://www.youtube.com/@Dhruvrathee",
-      upvotes: 82,
-      rating_avg: 4.8,
-      rating_count: 24,
-      is_verified: 1,
-      submitted_by_ip: "152.59.143.146",
-      created_at: "2026-10-15T09:13:26.680Z",
-      updated_at: "2026-10-15T09:13:26.680Z",
-      contact_phone: "",
-      contact_email: "",
-      other_links: "https://twitter.com/dhruv_rathee"
-    },
-    {
-      id: "prop-1791964760398-bwcc8l",
-      name: "Indlans",
-      handle_x: "",
-      handle_yt: "INDlANS",
-      handle_insta: "",
-      avatar_url: "https://unavatar.io/youtube/@INDlANS",
-      categories: "[\"Social Media\"]",
-      party: "",
-      institution: "",
-      narrative: "Spreading coordinated disinformation and false geopolitical narratives targeting domestic harmony.",
-      fact_check: "Debunked by public watchdog communities.",
-      proof_url: "",
-      upvotes: 27,
-      rating_avg: 4.5,
-      rating_count: 27,
-      is_verified: 1,
-      submitted_by_ip: "152.59.147.155",
-      created_at: "2026-10-14T07:59:20.398Z",
-      updated_at: "2026-10-14T14:40:39.220Z",
-      contact_phone: "",
-      contact_email: "",
-      other_links: ""
-    }
-  ],
+  nationalists: [],
+  entities: [],
   shieldAttempts: [],
   trafficLogs: [],
   activityLogs: [],
@@ -251,20 +116,7 @@ const memoryState = {
       is_active: 1
     }
   ],
-  posts: [
-    {
-      id: 'post-1',
-      title: 'Welcome to Exposed Propagandus',
-      content: 'Public watchdog tracking anti-India propagandists, foreign-funded narratives, and celebrating patriotic nationalist creators. Bharat Mata ki Jai 🇮🇳',
-      image_url: null,
-      badge: 'OFFICIAL',
-      is_pinned: 1,
-      likes: 108,
-      views: 1250,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
-    }
-  ],
+  posts: [],
   govtPoll: {
     yesVotes: 1420,
     noVotes: 110,
@@ -789,40 +641,11 @@ class CloudflareDataStore {
           );
         `);
 
-        const row = await this.d1.prepare('SELECT count(*) as cnt FROM entities').first();
-        if (row && Number(row.cnt) === 0 && memoryState.entities.length > 0) {
-          const stmts = memoryState.entities.map(e =>
-            this.d1.prepare(`INSERT OR IGNORE INTO entities (id, name, handle_x, handle_yt, handle_insta, contact_phone, contact_email, other_links, avatar_url, categories, party, institution, narrative, fact_check, proof_url, upvotes, rating_avg, rating_count, is_verified, submitted_by_ip, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-              .bind(e.id, e.name, e.handle_x || '', e.handle_yt || '', e.handle_insta || '', e.contact_phone || '', e.contact_email || '', typeof e.other_links === 'string' ? e.other_links : JSON.stringify(e.other_links || []), e.avatar_url || '', e.categories || '', e.party || null, e.institution || null, e.narrative || '', e.fact_check || null, e.proof_url || null, e.upvotes || 1, e.rating_avg || 5.0, e.rating_count || 1, e.is_verified || 1, e.submitted_by_ip || '', e.created_at || new Date().toISOString(), e.updated_at || new Date().toISOString())
-          );
-          if (stmts.length > 0) {
-            await this.d1.batch(stmts.slice(0, 50));
-          }
-        }
-
-        const postRow = await this.d1.prepare('SELECT count(*) as cnt FROM admin_posts').first();
-        if (postRow && Number(postRow.cnt) === 0 && memoryState.posts.length > 0) {
-          const postStmts = memoryState.posts.map(p =>
-            this.d1.prepare(`INSERT OR IGNORE INTO admin_posts (id, title, content, image_url, badge, is_pinned, likes, author, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-              .bind(p.id, p.title, p.content, p.image_url || null, p.badge || 'DISPATCH', p.is_pinned ? 1 : 0, p.likes || 0, p.author || 'Om Kumar (Admin)', p.created_at || new Date().toISOString())
-          );
-          if (postStmts.length > 0) {
-            await this.d1.batch(postStmts.slice(0, 50));
-          }
-        }
       } catch (err) {
         console.error('D1 init error', err);
       }
     } else if (this.kv) {
       try {
-        const hasEntities = await this.kv.get('entities');
-        if (!hasEntities && memoryState.entities.length > 0) {
-          await this.kv.put('entities', JSON.stringify(memoryState.entities));
-        }
-        const hasPosts = await this.kv.get('posts');
-        if (!hasPosts && memoryState.posts.length > 0) {
-          await this.kv.put('posts', JSON.stringify(memoryState.posts));
-        }
         const hasRatings = await this.kv.get('ratings');
         if (!hasRatings) {
           await this.kv.put('ratings', JSON.stringify(memoryState.ratings || {}));
@@ -835,24 +658,24 @@ class CloudflareDataStore {
 
   // --- ENTITIES & WANTED LEVEL RANKING ---
   async getEntities({ search, category, party, institution, sort } = {}) {
-    let list = [];
+    let list = null;
     if (this.d1) {
       try {
         const { results } = await this.d1.prepare('SELECT * FROM entities').all();
-        if (Array.isArray(results) && results.length > 0) {
+        if (Array.isArray(results)) {
           list = results;
         }
       } catch (e) {}
     }
-    if (list.length === 0 && this.kv) {
+    if (list === null && this.kv) {
       try {
         const data = await this.kv.get('entities', { type: 'json' });
-        if (Array.isArray(data) && data.length > 0) {
+        if (Array.isArray(data)) {
           list = data;
         }
       } catch (e) {}
     }
-    if (list.length === 0) {
+    if (list === null) {
       list = memoryState.entities.filter(e => !memoryState.deletedEntityIds.has(e.id));
     }
 
@@ -906,7 +729,14 @@ class CloudflareDataStore {
   }
 
   async addEntity(entity) {
-    memoryState.entities.unshift(entity);
+    const cleanId = String(entity.id).trim();
+    const existingIdx = memoryState.entities.findIndex(e => String(e.id).trim() === cleanId);
+    if (existingIdx >= 0) {
+      memoryState.entities[existingIdx] = { ...memoryState.entities[existingIdx], ...entity };
+    } else {
+      memoryState.entities.unshift(entity);
+    }
+    memoryState.deletedEntityIds.delete(cleanId);
     if (this.d1) {
       try {
         await this.d1.prepare(`
@@ -1080,13 +910,13 @@ class CloudflareDataStore {
     if (this.d1) {
       try {
         const { results } = await this.d1.prepare('SELECT * FROM admin_posts ORDER BY is_pinned DESC, created_at DESC').all();
-        if (Array.isArray(results) && results.length > 0) return results;
+        if (Array.isArray(results)) return results;
       } catch (e) {}
     }
     if (this.kv) {
       try {
         const data = await this.kv.get('posts', { type: 'json' });
-        if (Array.isArray(data) && data.length > 0) return data;
+        if (Array.isArray(data)) return data;
       } catch (e) {}
     }
     return memoryState.posts;
@@ -1168,20 +998,27 @@ class CloudflareDataStore {
     if (this.d1) {
       try {
         const { results } = await this.d1.prepare('SELECT * FROM nationalist_influencers ORDER BY upvotes DESC').all();
-        if (Array.isArray(results) && results.length > 0) return results;
+        if (Array.isArray(results)) return results;
       } catch (e) {}
     }
     if (this.kv) {
       try {
         const data = await this.kv.get('nationalists', { type: 'json' });
-        if (Array.isArray(data) && data.length > 0) return data;
+        if (Array.isArray(data)) return data;
       } catch (e) {}
     }
     return memoryState.nationalists.filter(n => !memoryState.deletedNationalistIds.has(n.id));
   }
 
   async addNationalist(nat) {
-    memoryState.nationalists.unshift(nat);
+    const cleanId = String(nat.id).trim();
+    const existingIdx = memoryState.nationalists.findIndex(n => String(n.id).trim() === cleanId);
+    if (existingIdx >= 0) {
+      memoryState.nationalists[existingIdx] = { ...memoryState.nationalists[existingIdx], ...nat };
+    } else {
+      memoryState.nationalists.unshift(nat);
+    }
+    memoryState.deletedNationalistIds.delete(cleanId);
     if (this.d1) {
       try {
         await this.d1.prepare(`
@@ -1205,6 +1042,68 @@ class CloudflareDataStore {
       } catch (e) {}
     }
     return nat;
+  }
+
+  async updateNationalist(id, updates) {
+    const cleanId = String(id).trim();
+    const nat = memoryState.nationalists.find(n => String(n.id).trim() === cleanId);
+    if (nat) {
+      Object.assign(nat, updates);
+      nat.updated_at = new Date().toISOString();
+    }
+    if (this.d1) {
+      try {
+        const fields = [];
+        const values = [];
+        for (const [k, v] of Object.entries(updates)) {
+          if (k !== 'id') {
+            fields.push(`${k} = ?`);
+            values.push(typeof v === 'object' && v !== null ? JSON.stringify(v) : v);
+          }
+        }
+        if (fields.length > 0) {
+          values.push(cleanId);
+          await this.d1.prepare(`UPDATE nationalist_influencers SET ${fields.join(', ')} WHERE id = ?`).bind(...values).run();
+        }
+      } catch (e) {
+        console.error('D1 updateNationalist error', e);
+      }
+    }
+    if (this.kv) {
+      try {
+        let nats = await this.kv.get('nationalists', { type: 'json' });
+        if (Array.isArray(nats)) {
+          const target = nats.find(n => String(n.id).trim() === cleanId);
+          if (target) {
+            Object.assign(target, updates);
+            target.updated_at = new Date().toISOString();
+            await this.kv.put('nationalists', JSON.stringify(nats));
+          }
+        }
+      } catch (e) {
+        console.error('KV updateNationalist error', e);
+      }
+    }
+  }
+
+  async deleteNationalist(id) {
+    const cleanId = String(id).trim();
+    memoryState.nationalists = memoryState.nationalists.filter(n => String(n.id).trim() !== cleanId);
+    memoryState.deletedNationalistIds.add(cleanId);
+    if (this.d1) {
+      try {
+        await this.d1.prepare('DELETE FROM nationalist_influencers WHERE id = ?').bind(cleanId).run();
+      } catch (e) {}
+    }
+    if (this.kv) {
+      try {
+        let nats = await this.kv.get('nationalists', { type: 'json' });
+        if (Array.isArray(nats)) {
+          nats = nats.filter(n => String(n.id).trim() !== cleanId);
+          await this.kv.put('nationalists', JSON.stringify(nats));
+        }
+      } catch (e) {}
+    }
   }
 
   async getStatus() {
@@ -2329,14 +2228,7 @@ export default {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       };
-
-      const existingIdx = memoryState.entities.findIndex(e => String(e.id).trim() === String(newEnt.id).trim());
-      if (existingIdx >= 0) {
-        memoryState.entities[existingIdx] = { ...memoryState.entities[existingIdx], ...newEnt };
-      } else {
-        memoryState.entities.unshift(newEnt);
-      }
-      memoryState.deletedEntityIds.delete(newEnt.id);
+      await dbStore.addEntity(newEnt);
 
       if (ctx?.waitUntil) {
         ctx.waitUntil(forwardToInfinityFree(path, 'POST', b, { 'x-admin-key': request.headers.get('x-admin-key') || '' }));
@@ -2351,6 +2243,7 @@ export default {
       const ent = memoryState.entities.find(e => String(e.id).trim() === String(id).trim());
       if (ent) {
         ent.is_verified = ent.is_verified ? 0 : 1;
+        await dbStore.updateEntity(ent.id, { is_verified: ent.is_verified });
         return new Response(JSON.stringify({ success: true, is_verified: ent.is_verified }), { headers: JSON_HEADERS });
       }
       return new Response(JSON.stringify({ error: 'Not found' }), { status: 404, headers: JSON_HEADERS });
@@ -2365,6 +2258,7 @@ export default {
       if (ent) {
         Object.assign(ent, b);
         ent.updated_at = new Date().toISOString();
+        await dbStore.updateEntity(ent.id, ent);
         if (ctx?.waitUntil) {
           ctx.waitUntil(forwardToInfinityFree(path, 'PUT', b, { 'x-admin-key': request.headers.get('x-admin-key') || '' }));
         }
@@ -2378,11 +2272,7 @@ export default {
       if (!isAuthorizedAdmin(request, url)) return new Response(JSON.stringify({ error: 'Unauthorized admin' }), { status: 401, headers: JSON_HEADERS });
       const id = path.split('/')[4];
       const cleanId = String(id).trim();
-      memoryState.entities = memoryState.entities.filter(e => String(e.id).trim() !== cleanId);
-      memoryState.deletedEntityIds.add(cleanId);
-      for (const k of Object.keys(memoryState.ratings)) {
-        if (k.startsWith(`${cleanId}:`)) delete memoryState.ratings[k];
-      }
+      await dbStore.deleteEntity(cleanId);
       if (ctx?.waitUntil) {
         ctx.waitUntil(forwardToInfinityFree(path, 'DELETE', null, { 'x-admin-key': request.headers.get('x-admin-key') || '' }));
       }
@@ -2465,13 +2355,7 @@ export default {
         updated_at: new Date().toISOString()
       };
 
-      const existingIdx = memoryState.nationalists.findIndex(n => String(n.id).trim() === String(newNat.id).trim());
-      if (existingIdx >= 0) {
-        memoryState.nationalists[existingIdx] = { ...memoryState.nationalists[existingIdx], ...newNat };
-      } else {
-        memoryState.nationalists.unshift(newNat);
-      }
-      memoryState.deletedNationalistIds.delete(String(newNat.id).trim());
+      await dbStore.addNationalist(newNat);
 
       if (ctx?.waitUntil) {
         ctx.waitUntil(forwardToInfinityFree(path, 'POST', b, { 'x-admin-key': request.headers.get('x-admin-key') || '' }));
@@ -2488,6 +2372,7 @@ export default {
       if (nat) {
         Object.assign(nat, b);
         nat.updated_at = new Date().toISOString();
+        await dbStore.updateNationalist(nat.id, nat);
         if (ctx?.waitUntil) {
           ctx.waitUntil(forwardToInfinityFree(path, effectiveMethod, b, { 'x-admin-key': request.headers.get('x-admin-key') || '' }));
         }
@@ -2500,8 +2385,7 @@ export default {
       if (!isAuthorizedAdmin(request, url)) return new Response(JSON.stringify({ error: 'Unauthorized admin' }), { status: 401, headers: JSON_HEADERS });
       const id = path.replace('/api/admin/nationalist-influencers/', '').replace(/\/$/, '').trim();
       const cleanId = String(id).trim();
-      memoryState.nationalists = memoryState.nationalists.filter(n => String(n.id).trim() !== cleanId);
-      memoryState.deletedNationalistIds.add(cleanId);
+      await dbStore.deleteNationalist(cleanId);
       if (ctx?.waitUntil) {
         ctx.waitUntil(forwardToInfinityFree(path, 'DELETE', null, { 'x-admin-key': request.headers.get('x-admin-key') || '' }));
       }

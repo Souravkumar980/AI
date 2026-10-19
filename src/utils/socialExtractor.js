@@ -42,7 +42,7 @@ export function cleanHandle(input, platform) {
   return str.trim();
 }
 
-// Convert handle to readable name (e.g., 'dhruv_rathee' -> 'Dhruv Rathee')
+// Convert handle to readable name (e.g., 'channel_name' -> 'Channel Name')
 export function formatNameFromHandle(handle) {
   if (!handle) return '';
   const cleaned = handle.replace(/[_.-]+/g, ' ').trim();

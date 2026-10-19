@@ -267,6 +267,13 @@ async function generateUploadHtml() {
       } catch (e) {}
     }
   }
+  const backupDistPath = path.join(distDir, 'v7/admin/om/backup');
+  if (fs.existsSync(backupDistPath)) {
+    try {
+      fs.rmSync(backupDistPath, { recursive: true, force: true });
+      console.log('🛡️ Security Cleaner: Removed legacy backup dir from dist/v7/admin/om/backup');
+    } catch (e) {}
+  }
 
   const distUploadPath = path.join(distDir, 'upload.html');
   const rootUploadPath = path.resolve(__dirname, '../upload.html');
