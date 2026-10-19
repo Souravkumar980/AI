@@ -1274,6 +1274,14 @@ export default {
     const url = new URL(request.url);
     let path = url.pathname;
 
+    // Normalization: Support both Clean REST (/api/...) and PHP style (/api.php?endpoint=...)
+    if (path === '/api.php' || path === '/api') {
+      const ep = url.searchParams.get('endpoint');
+      if (ep) {
+        path = ep.startsWith('/') ? `/api${ep}` : `/api/${ep}`;
+      }
+    }
+
     // 🛡️ Security Guard: Block any direct access to sensitive database, config, or server files
     if (
       /\.(sql|php|env|config|bak|log|db|sqlite|md|sh)$/i.test(path) ||
@@ -1289,14 +1297,6 @@ export default {
         message: '🛡️ Sovereign Security Guard: Direct access to database dumps, configuration files, and server scripts is strictly forbidden.',
         status: 403
       }), { status: 403, headers: JSON_HEADERS });
-    }
-
-    // Normalization: Support both Clean REST (/api/...) and PHP style (/api.php?endpoint=...)
-    if (path === '/api.php' || path === '/api') {
-      const ep = url.searchParams.get('endpoint');
-      if (ep) {
-        path = ep.startsWith('/') ? `/api${ep}` : `/api/${ep}`;
-      }
     }
 
     // Support method overrides via query (_method) or header (x-http-method-override)
