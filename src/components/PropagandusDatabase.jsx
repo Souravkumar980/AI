@@ -51,14 +51,14 @@ function WantedRatingWidget({ entity, myRating, onOpenRatingModal }) {
         <button
           type="button"
           onClick={() => onOpenRatingModal(entity)}
-          className="inline-flex items-center gap-1 px-2.5 py-1 bg-gradient-to-r from-red-600 to-amber-500 hover:from-amber-500 hover:to-red-600 text-white font-comic font-black text-[11px] sm:text-xs uppercase tracking-wider rounded-lg border border-black shadow-[1.5px_1.5px_0px_#000] active:scale-95 transition-all cursor-pointer"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-red-600 to-amber-500 hover:from-amber-500 hover:to-red-600 text-white font-sans font-black text-[11px] sm:text-xs uppercase tracking-wider rounded-lg border-2 border-black shadow-[2px_2px_0px_#000] active:scale-95 transition-all cursor-pointer"
           title={`Rate Wanted Level for ${entity?.name || 'Propagandu'}`}
         >
           <span>⭐</span>
           <span>{userScore ? `Wanted Rating: ${userScore}★ (Update)` : 'Give Wanted Rating'}</span>
         </button>
         {userScore && (
-          <span className="text-[10px] text-tirangaGreen font-mono font-black">
+          <span className="text-[11px] text-tirangaGreen font-mono font-black">
             (Your Vote: {userScore}★)
           </span>
         )}
