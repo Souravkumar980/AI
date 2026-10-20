@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import IndianFlagLogo from './IndianFlagLogo';
 import {
   Home,
@@ -328,12 +328,54 @@ const parseMsgTime = (m) => {
   if (!m) return 0;
   if (m.created_timestamp && Number(m.created_timestamp) > 0) return Number(m.created_timestamp);
   if (m.timestamp && Number(m.timestamp) > 0) return Number(m.timestamp);
+  if (m.created_at) {
+    const parsed = Date.parse(m.created_at);
+    if (!isNaN(parsed)) return parsed;
+  }
   if (typeof m.id === 'string' && m.id.startsWith('msg_')) {
     const parts = m.id.split('_');
     const ts = Number(parts[1]);
     if (ts && !isNaN(ts)) return ts;
   }
   return 0;
+};
+
+// Real-time client-side timezone-aware message time formatter (100% device local real-time)
+const formatMsgDisplayTime = (createdAt, createdTimestamp) => {
+  try {
+    if (createdTimestamp && !isNaN(Number(createdTimestamp))) {
+      const d = new Date(Number(createdTimestamp));
+      if (!isNaN(d.getTime())) {
+        return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+      }
+    }
+    if (createdAt) {
+      const parsed = Date.parse(createdAt);
+      if (!isNaN(parsed)) {
+        const d = new Date(parsed);
+        return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+      }
+      return createdAt;
+    }
+  } catch (e) {}
+  return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+};
+
+// DM Partner ID Extractor (Supports both __ and _ joined IDs with full resilient fallback)
+const extractDmPartnerId = (channelId, currentUserId, allUsers = []) => {
+  if (!channelId || !channelId.startsWith('dm_') || !currentUserId) return null;
+  const raw = channelId.slice(3); // remove 'dm_'
+  if (raw.includes('__')) {
+    const [p1, p2] = raw.split('__');
+    if (p1 === currentUserId) return p2;
+    if (p2 === currentUserId) return p1;
+  }
+  for (const u of allUsers) {
+    if (u.id !== currentUserId && raw.includes(u.id)) {
+      return u.id;
+    }
+  }
+  return null;
 };
 
 export default function CommunityPage({ onSelectPage }) {
@@ -376,6 +418,27 @@ export default function CommunityPage({ onSelectPage }) {
   const [activeChatRoom, setActiveChatRoom] = useState('public'); // 'public', channel_id, or dm_user_id
   const [activeChannelObj, setActiveChannelObj] = useState(null);
   const [activeDmUser, setActiveDmUser] = useState(null);
+
+  const usersRef = useRef(users);
+  useEffect(() => {
+    usersRef.current = users;
+  }, [users]);
+
+  const activeChatRoomRef = useRef(activeChatRoom);
+  useEffect(() => {
+    activeChatRoomRef.current = activeChatRoom;
+  }, [activeChatRoom]);
+
+  const derivedDmUser = useMemo(() => {
+    if (!activeChatRoom || !activeChatRoom.startsWith('dm_')) return null;
+    if (activeDmUser) return activeDmUser;
+    if (!currentUser) return null;
+    const pid = extractDmPartnerId(activeChatRoom, currentUser.id, users);
+    if (pid) {
+      return users.find(u => u.id === pid) || null;
+    }
+    return null;
+  }, [activeChatRoom, activeDmUser, currentUser, users]);
 
   // Messages list
   const [messages, setMessages] = useState(() => {
@@ -537,42 +600,76 @@ export default function CommunityPage({ onSelectPage }) {
     if (currentUser?.id) {
       try {
         const saved = localStorage.getItem('ep_direct_chat_users_' + currentUser.id);
-        if (saved) setDirectChatUsers(JSON.parse(saved));
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setDirectChatUsers(parsed);
+          }
+        }
       } catch {}
     }
   }, [currentUser?.id]);
 
   useEffect(() => {
-    if (currentUser?.id) {
+    if (currentUser?.id && directChatUsers.length > 0) {
       try {
         localStorage.setItem('ep_direct_chat_users_' + currentUser.id, JSON.stringify(directChatUsers));
       } catch {}
     }
   }, [directChatUsers, currentUser?.id]);
 
-  // Synchronize Direct Chat partners from DM messages
+  // Live In-App Direct Message Toast Notification
+  const [incomingDmToast, setIncomingDmToast] = useState(null); // { id, channelId, senderUser, senderName, senderUsername, senderAvatar, content }
+
+  // Auto-dismiss incoming DM toast after 7 seconds
   useEffect(() => {
-    if (!currentUser || !messages) return;
+    if (incomingDmToast) {
+      const timer = setTimeout(() => {
+        setIncomingDmToast(null);
+      }, 7000);
+      return () => clearTimeout(timer);
+    }
+  }, [incomingDmToast]);
+
+  const handleClickDmToast = (toast) => {
+    if (!toast) return;
+    setIncomingDmToast(null);
+    let partner = toast.senderUser;
+    if (!partner && toast.senderUsername) {
+      partner = users.find(u => u.username?.toLowerCase() === toast.senderUsername.toLowerCase());
+    }
+    if (partner) {
+      handleStartDm(partner);
+    } else if (toast.channelId) {
+      setActiveChatRoom(toast.channelId);
+      setMobileView('chat');
+    }
+  };
+
+  // Synchronize Direct Chat partners from DM messages (Instagram-style persistent DM list)
+  useEffect(() => {
+    if (!currentUser || !messages || !users) return;
     const dmMessages = messages.filter(m => m.channel_id && m.channel_id.startsWith('dm_'));
     const partnerIds = new Set();
     for (const m of dmMessages) {
-      const parts = m.channel_id.replace('dm_', '').split('_');
-      if (parts.length === 2) {
-        if (parts[0] === currentUser.id) partnerIds.add(parts[1]);
-        else if (parts[1] === currentUser.id) partnerIds.add(parts[0]);
-      }
+      const pid = extractDmPartnerId(m.channel_id, currentUser.id, users);
+      if (pid) partnerIds.add(pid);
     }
     if (partnerIds.size > 0) {
       setDirectChatUsers(prev => {
-        const existingIds = new Set(prev.map(u => u.id));
-        const newUsers = [];
+        const existingMap = new Map();
+        for (const u of prev) existingMap.set(u.id, u);
         for (const pid of partnerIds) {
-          if (!existingIds.has(pid)) {
+          if (!existingMap.has(pid)) {
             const found = users.find(u => u.id === pid);
-            if (found) newUsers.push(found);
+            if (found) existingMap.set(pid, found);
           }
         }
-        return newUsers.length > 0 ? [...newUsers, ...prev] : prev;
+        const updated = Array.from(existingMap.values());
+        try {
+          localStorage.setItem('ep_direct_chat_users_' + currentUser.id, JSON.stringify(updated));
+        } catch {}
+        return updated;
       });
     }
   }, [messages, currentUser, users]);
@@ -763,47 +860,136 @@ export default function CommunityPage({ onSelectPage }) {
     let eventSource = null;
     let bc = null;
 
+    // Unified processor for incoming realtime events (BroadcastChannel & SSE)
+    const processIncomingRealtimeEvent = (data) => {
+      try {
+        if (!data || !data.type) return;
+
+        if (data.type === 'NEW_MESSAGE' && data.message) {
+          const curU = currentUserRef.current;
+          const msg = data.message;
+          setMessages(prev => {
+            // 1. Direct ID deduplication
+            if (prev.some(m => m.id === msg.id)) {
+              return prev.map(m => m.id === msg.id ? { ...msg, is_uploading: false } : m);
+            }
+            // 2. Optimistic pending deduplication for current user
+            if (curU && msg.user_id === curU.id) {
+              const optIdx = prev.findIndex(m =>
+                m.user_id === curU.id &&
+                m.channel_id === msg.channel_id &&
+                m.content === msg.content &&
+                (m.is_uploading || m.id.startsWith('msg_'))
+              );
+              if (optIdx >= 0) {
+                return prev.map((m, idx) => idx === optIdx ? { ...msg, is_uploading: false } : m);
+              }
+            }
+            return [...prev, msg];
+          });
+          scrollMessagesToBottom('smooth');
+
+          // Instagram-style DM Notification & Active Chat partner persistence
+          if (msg.channel_id && msg.channel_id.startsWith('dm_') && curU && msg.user_id !== curU.id) {
+            const partnerId = extractDmPartnerId(msg.channel_id, curU.id, usersRef.current);
+            if (partnerId) {
+              const senderObj = usersRef.current.find(u => u.id === msg.user_id) || {
+                id: msg.user_id,
+                name: msg.user_name || msg.username,
+                username: msg.username,
+                avatar_url: msg.user_avatar,
+                verified_type: msg.verified_type || 'none'
+              };
+              setDirectChatUsers(prev => {
+                const map = new Map();
+                for (const u of prev) map.set(u.id, u);
+                map.set(senderObj.id, { ...(map.get(senderObj.id) || {}), ...senderObj });
+                const list = Array.from(map.values());
+                try { localStorage.setItem('ep_direct_chat_users_' + curU.id, JSON.stringify(list)); } catch {}
+                return list;
+              });
+
+              if (activeChatRoomRef.current !== msg.channel_id) {
+                setIncomingDmToast({
+                  id: msg.id,
+                  channelId: msg.channel_id,
+                  senderUser: senderObj,
+                  senderName: msg.user_name || msg.username,
+                  senderUsername: msg.username,
+                  senderAvatar: msg.user_avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${msg.username}`,
+                  content: msg.content || 'Sent an attachment'
+                });
+              }
+            }
+          }
+        } else if (data.type === 'REACTION_UPDATE') {
+          setMessages(prev => prev.map(m => m.id === data.message_id ? { ...m, reactions: data.reactions } : m));
+        } else if (data.type === 'DELETE_MESSAGE') {
+          setMessages(prev => prev.filter(m => m.id !== data.message_id));
+        } else if (data.type === 'NEW_NOTIFICATION' && data.notification) {
+          const curU = currentUserRef.current;
+          const notif = data.notification;
+          setNotifications(prev => {
+            if (prev.some(n => n.id === notif.id)) return prev;
+            return [notif, ...prev];
+          });
+
+          if (curU && notif.type === 'direct_message') {
+            const isForMe = notif.recipient_id === curU.id ||
+              (notif.recipient_username && notif.recipient_username.toLowerCase() === curU.username?.toLowerCase());
+            if (isForMe && activeChatRoomRef.current !== notif.channel_id) {
+              const senderObj = usersRef.current.find(u => u.id === notif.sender_id || u.username?.toLowerCase() === notif.sender_username?.toLowerCase()) || {
+                id: notif.sender_id || notif.dm_user_id || ('usr_' + notif.sender_username),
+                name: notif.sender_name || notif.sender_username,
+                username: notif.sender_username,
+                avatar_url: notif.sender_avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${notif.sender_username}`,
+                verified_type: 'none'
+              };
+              setDirectChatUsers(prev => {
+                const map = new Map();
+                for (const u of prev) map.set(u.id, u);
+                map.set(senderObj.id, { ...(map.get(senderObj.id) || {}), ...senderObj });
+                const list = Array.from(map.values());
+                try { localStorage.setItem('ep_direct_chat_users_' + curU.id, JSON.stringify(list)); } catch {}
+                return list;
+              });
+
+              setIncomingDmToast({
+                id: notif.id,
+                channelId: notif.channel_id,
+                senderUser: senderObj,
+                senderName: notif.sender_name || notif.sender_username,
+                senderUsername: notif.sender_username,
+                senderAvatar: notif.sender_avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${notif.sender_username}`,
+                content: notif.message || 'Sent you a direct message'
+              });
+            }
+          }
+          fetchCommunitySync();
+        } else if (data.type === 'CHANNEL_UPDATED' || data.type === 'CHANNEL_UPDATE') {
+          if (data.channel) {
+            setChannels(prev => {
+              const idx = prev.findIndex(c => c.id === data.channel.id);
+              if (idx >= 0) {
+                const copy = [...prev];
+                copy[idx] = { ...copy[idx], ...data.channel };
+                return copy;
+              }
+              return [...prev, data.channel];
+            });
+          }
+          fetchCommunitySync();
+        } else if (data.type === 'USER_BANNED' || data.type === 'BADGE_UPDATE' || data.type === 'SYNC_NOW') {
+          fetchCommunitySync();
+        }
+      } catch (e) {}
+    };
+
     // 1. Cross-Tab Real-time BroadcastChannel (Same browser multi-user / multi-tab)
     try {
       bc = new BroadcastChannel('ep_community_realtime');
       bc.onmessage = (event) => {
-        try {
-          const data = event.data;
-          if (data.type === 'NEW_MESSAGE' && data.message) {
-            setMessages(prev => {
-              // 1. Direct ID deduplication
-              if (prev.some(m => m.id === data.message.id)) {
-                return prev.map(m => m.id === data.message.id ? { ...data.message, is_uploading: false } : m);
-              }
-              // 2. Optimistic pending deduplication for current user
-              if (currentUser && data.message.user_id === currentUser.id) {
-                const optIdx = prev.findIndex(m =>
-                  m.user_id === currentUser.id &&
-                  m.channel_id === data.message.channel_id &&
-                  m.content === data.message.content &&
-                  (m.is_uploading || m.id.startsWith('msg_'))
-                );
-                if (optIdx >= 0) {
-                  return prev.map((m, idx) => idx === optIdx ? { ...data.message, is_uploading: false } : m);
-                }
-              }
-              return [...prev, data.message];
-            });
-            scrollMessagesToBottom('smooth');
-          } else if (data.type === 'REACTION_UPDATE') {
-            setMessages(prev => prev.map(m => m.id === data.message_id ? { ...m, reactions: data.reactions } : m));
-          } else if (data.type === 'DELETE_MESSAGE') {
-            setMessages(prev => prev.filter(m => m.id !== data.message_id));
-          } else if (data.type === 'NEW_NOTIFICATION' && data.notification) {
-            setNotifications(prev => {
-              if (prev.some(n => n.id === data.notification.id)) return prev;
-              return [data.notification, ...prev];
-            });
-            fetchCommunitySync();
-          } else if (data.type === 'CHANNEL_UPDATE' || data.type === 'USER_BANNED' || data.type === 'BADGE_UPDATE' || data.type === 'SYNC_NOW') {
-            fetchCommunitySync();
-          }
-        } catch (e) {}
+        processIncomingRealtimeEvent(event.data);
       };
     } catch (e) {}
 
@@ -816,40 +1002,7 @@ export default function CommunityPage({ onSelectPage }) {
         eventSource.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data);
-            if (data.type === 'NEW_MESSAGE' && data.message) {
-              setMessages(prev => {
-                // 1. Direct ID deduplication
-                if (prev.some(m => m.id === data.message.id)) {
-                  return prev.map(m => m.id === data.message.id ? { ...data.message, is_uploading: false } : m);
-                }
-                // 2. Optimistic pending deduplication for current user
-                if (currentUser && data.message.user_id === currentUser.id) {
-                  const optIdx = prev.findIndex(m =>
-                    m.user_id === currentUser.id &&
-                    m.channel_id === data.message.channel_id &&
-                    m.content === data.message.content &&
-                    (m.is_uploading || m.id.startsWith('msg_'))
-                  );
-                  if (optIdx >= 0) {
-                    return prev.map((m, idx) => idx === optIdx ? { ...data.message, is_uploading: false } : m);
-                  }
-                }
-                return [...prev, data.message];
-              });
-              scrollMessagesToBottom('smooth');
-            } else if (data.type === 'REACTION_UPDATE') {
-              setMessages(prev => prev.map(m => m.id === data.message_id ? { ...m, reactions: data.reactions } : m));
-            } else if (data.type === 'DELETE_MESSAGE') {
-              setMessages(prev => prev.filter(m => m.id !== data.message_id));
-            } else if (data.type === 'NEW_NOTIFICATION' && data.notification) {
-              setNotifications(prev => {
-                if (prev.some(n => n.id === data.notification.id)) return prev;
-                return [data.notification, ...prev];
-              });
-              fetchCommunitySync();
-            } else if (data.type === 'CHANNEL_UPDATE' || data.type === 'USER_BANNED' || data.type === 'BADGE_UPDATE') {
-              fetchCommunitySync();
-            }
+            processIncomingRealtimeEvent(data);
           } catch (e) {}
         };
 
@@ -910,36 +1063,66 @@ export default function CommunityPage({ onSelectPage }) {
     if (activeChatRoom && activeChatRoom.startsWith('gate_') && currentUser) {
       const realChanId = activeChatRoom.replace('gate_', '');
       const chan = channels.find(c => c.id === realChanId);
-      if (chan && (chan.creator_id === currentUser.id || chan.members?.includes(currentUser.id) || currentUser.is_admin)) {
+      const isMember = Array.isArray(chan?.members) && chan.members.some(m => (typeof m === 'string' ? m === currentUser.id : m?.user_id === currentUser.id));
+      if (chan && (chan.creator_id === currentUser.id || isMember || currentUser.is_admin)) {
         setActiveChatRoom(realChanId);
         setActiveChannelObj(chan);
       }
     }
   }, [channels, activeChatRoom, currentUser]);
 
-  // Handle URL join token (e.g. #community?join=token or ?join=token)
+  // Handle URL join token (e.g. ?page=community&join=token or ?join=token)
   useEffect(() => {
-    const handleJoinUrl = () => {
-      const fullUrl = window.location.href;
+    const handleJoinUrl = async () => {
       let token = null;
-      if (fullUrl.includes('join=')) {
-        token = fullUrl.split('join=')[1].split('&')[0].split('#')[0];
+      try {
+        const u = new URL(window.location.href);
+        token = u.searchParams.get('join');
+      } catch (e) {}
+      if (!token && window.location.href.includes('join=')) {
+        token = window.location.href.split('join=')[1].split('&')[0].split('#')[0];
       }
-      if (token) {
-        const found = channels.find(c => c.join_token === token || c.id === token);
-        if (found) {
-          if (!currentUser) {
-            setIsAuthModalOpen(true);
-            setAuthMode('register');
-            setRegError(`Please register or login first to participate in channel "${found.name}".`);
-          } else {
-            handleOpenChannel(found);
+      if (!token) {
+        try {
+          token = sessionStorage.getItem('ep_pending_join_token');
+        } catch {}
+      }
+      if (!token) return;
+
+      token = token.trim();
+
+      // 1. Check if already loaded in channels state
+      let found = channels.find(c => c.join_token === token || c.id === token);
+
+      // 2. If not found locally, fetch directly from backend API
+      if (!found) {
+        try {
+          const res = await fetch(getCommunityApiUrl(`/api/community/channels/join?token=${encodeURIComponent(token)}`));
+          if (res.ok) {
+            const data = await res.json();
+            if (data.channel) {
+              found = data.channel;
+              setChannels(prev => prev.some(c => c.id === found.id) ? prev : [found, ...prev]);
+            }
           }
+        } catch (e) {}
+      }
+
+      if (found) {
+        setActiveChannelObj(found);
+        if (!currentUser) {
+          try { sessionStorage.setItem('ep_pending_join_token', token); } catch {}
+          setIsAuthModalOpen(true);
+          setAuthMode('register');
+          setRegError(`You've been invited to private channel "${found.name}". Please sign in or register to request access.`);
+        } else {
+          try { sessionStorage.removeItem('ep_pending_join_token'); } catch {}
+          handleOpenChannel(found);
         }
       }
     };
     handleJoinUrl();
-  }, [channels, currentUser]);
+  }, [channels.length, currentUser]);
 
   // Auto-scroll mention tag suggestion
   const handleInputChange = (e) => {
@@ -1347,7 +1530,8 @@ export default function CommunityPage({ onSelectPage }) {
             sender_username: currentUser.username,
             sender_name: currentUser.name,
             message: `@${currentUser.username} mentioned you: "${inputText.slice(0, 60)}..."`,
-            created_at: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            created_at: new Date().toISOString(),
+            created_timestamp: Date.now()
           });
         }
       });
@@ -1357,17 +1541,24 @@ export default function CommunityPage({ onSelectPage }) {
     }
 
     // If chatting in Direct Message, notify recipient
-    if (activeDmUser && activeChatRoom.startsWith('dm_')) {
+    const dmPartner = activeDmUser || derivedDmUser;
+    if (dmPartner && activeChatRoom.startsWith('dm_')) {
       const dmNotif = {
-        id: 'notif_dm_' + Date.now() + Math.random().toString(36).substr(2, 4),
+        id: 'notif_dm_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
         type: 'direct_message',
-        recipient_username: activeDmUser.username.toLowerCase(),
+        channel_id: activeChatRoom,
+        recipient_id: dmPartner.id,
+        recipient_username: (dmPartner.username || '').toLowerCase(),
+        sender_id: currentUser.id,
         sender_username: currentUser.username,
         sender_name: currentUser.name,
-        message: `@${currentUser.username} sent you a direct message: "${(inputText.trim() || 'Sent attachment').slice(0, 60)}"`,
-        created_at: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        sender_avatar: currentUser.avatar_url,
+        message: `@${currentUser.username} (${currentUser.name}) sent you a direct message: "${(inputText.trim() || 'Sent attachment').slice(0, 60)}"`,
+        created_at: new Date().toISOString(),
+        created_timestamp: Date.now()
       };
       setNotifications(prev => [dmNotif, ...prev]);
+      broadcastCrossTab({ type: 'NEW_NOTIFICATION', notification: dmNotif });
     }
 
     const filesToUpload = [...attachedFiles];
@@ -1402,7 +1593,7 @@ export default function CommunityPage({ onSelectPage }) {
         content: (replyTarget.content || replyTarget.text || '').slice(0, 100)
       } : null,
       created_timestamp: Date.now(),
-      created_at: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      created_at: new Date().toISOString(),
       is_uploading: hasUploadingFiles
     };
 
@@ -1552,20 +1743,27 @@ export default function CommunityPage({ onSelectPage }) {
         content: (replyTarget.content || replyTarget.text || '').slice(0, 100)
       } : null,
       created_timestamp: Date.now(),
-      created_at: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      created_at: new Date().toISOString()
     };
 
-    if (activeDmUser && activeChatRoom.startsWith('dm_')) {
+    const dmPartner = activeDmUser || derivedDmUser;
+    if (dmPartner && activeChatRoom.startsWith('dm_')) {
       const dmNotif = {
-        id: 'notif_dm_' + Date.now() + Math.random().toString(36).substr(2, 4),
+        id: 'notif_dm_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
         type: 'direct_message',
-        recipient_username: activeDmUser.username.toLowerCase(),
+        channel_id: activeChatRoom,
+        recipient_id: dmPartner.id,
+        recipient_username: (dmPartner.username || '').toLowerCase(),
+        sender_id: currentUser.id,
         sender_username: currentUser.username,
         sender_name: currentUser.name,
-        message: `@${currentUser.username} sent you a GIF in direct message`,
-        created_at: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        sender_avatar: currentUser.avatar_url,
+        message: `@${currentUser.username} (${currentUser.name}) sent you a GIF in direct message`,
+        created_at: new Date().toISOString(),
+        created_timestamp: Date.now()
       };
       setNotifications(prev => [dmNotif, ...prev]);
+      broadcastCrossTab({ type: 'NEW_NOTIFICATION', notification: dmNotif });
     }
 
     setMessages(prev => [...prev, newMessage]);
@@ -1868,7 +2066,7 @@ export default function CommunityPage({ onSelectPage }) {
     setMobileView('chat');
 
     // If creator or admin or approved member: enter channel
-    const isMember = chan.members?.includes(currentUser.id);
+    const isMember = Array.isArray(chan.members) && chan.members.some(m => (typeof m === 'string' ? m === currentUser.id : m?.user_id === currentUser.id));
     const isCreator = chan.creator_id === currentUser.id;
     const isAdmin = currentUser.is_admin;
 
@@ -1882,25 +2080,36 @@ export default function CommunityPage({ onSelectPage }) {
 
   const handleRequestJoinChannel = async (chanId) => {
     if (!currentUser) return;
-    const chan = channels.find(c => c.id === chanId);
-    setChannels(channels.map(c => {
+    const chan = channels.find(c => c.id === chanId) || activeChannelObj;
+    const nowIso = new Date().toISOString();
+    const newReq = {
+      user_id: currentUser.id,
+      name: currentUser.name,
+      username: currentUser.username,
+      avatar_url: currentUser.avatar_url,
+      requested_at: formatMsgDisplayTime(nowIso, Date.now())
+    };
+
+    setChannels(prev => prev.map(c => {
       if (c.id === chanId) {
         const existing = c.pending_requests || [];
         if (!existing.some(r => r.user_id === currentUser.id)) {
-          return {
-            ...c,
-            pending_requests: [...existing, {
-              user_id: currentUser.id,
-              name: currentUser.name,
-              username: currentUser.username,
-              avatar_url: currentUser.avatar_url,
-              requested_at: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-            }]
-          };
+          return { ...c, pending_requests: [...existing, newReq] };
         }
       }
       return c;
     }));
+
+    if (activeChannelObj && activeChannelObj.id === chanId) {
+      setActiveChannelObj(prev => {
+        if (!prev) return prev;
+        const existing = prev.pending_requests || [];
+        if (!existing.some(r => r.user_id === currentUser.id)) {
+          return { ...prev, pending_requests: [...existing, newReq] };
+        }
+        return prev;
+      });
+    }
 
     // Dispatch notification to channel creator
     if (chan && chan.creator_username) {
@@ -1914,10 +2123,12 @@ export default function CommunityPage({ onSelectPage }) {
         requester_username: currentUser.username,
         requester_avatar: currentUser.avatar_url,
         recipient_username: chan.creator_username.toLowerCase(),
+        recipient_id: chan.creator_id,
         sender_username: currentUser.username,
         sender_name: currentUser.name,
         message: `@${currentUser.username} (${currentUser.name}) requested to participate in your private channel "${chan.name}"`,
-        created_at: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        created_at: nowIso,
+        created_timestamp: Date.now()
       };
       setNotifications(prev => [notifReq, ...prev]);
       broadcastCrossTab({ type: 'NEW_NOTIFICATION', notification: notifReq });
@@ -1945,14 +2156,31 @@ export default function CommunityPage({ onSelectPage }) {
   };
 
   const handleAdmitParticipant = async (chanId, participantUserId, notifId) => {
-    setChannels(channels.map(c => {
+    const admittedUser = users.find(u => u.id === participantUserId);
+    setChannels(prev => prev.map(c => {
       if (c.id === chanId) {
-        const updatedMembers = [...new Set([...(c.members || []), participantUserId])];
+        const updatedMembers = [...(c.members || [])];
+        if (!updatedMembers.some(m => (typeof m === 'string' ? m === participantUserId : m?.user_id === participantUserId))) {
+          updatedMembers.push({
+            user_id: participantUserId,
+            username: admittedUser?.username || 'member',
+            name: admittedUser?.name || 'Member',
+            role: 'member'
+          });
+        }
         const updatedRequests = (c.pending_requests || []).filter(r => r.user_id !== participantUserId);
         return { ...c, members: updatedMembers, pending_requests: updatedRequests };
       }
       return c;
     }));
+
+    if (activeChannelObj && activeChannelObj.id === chanId) {
+      setActiveChannelObj(prev => {
+        if (!prev) return prev;
+        const updatedRequests = (prev.pending_requests || []).filter(r => r.user_id !== participantUserId);
+        return { ...prev, pending_requests: updatedRequests };
+      });
+    }
 
     if (notifId) {
       setNotifications(prev => prev.map(n => n.id === notifId ? { ...n, resolved: true, resolvedAction: 'admitted' } : n));
@@ -1966,7 +2194,7 @@ export default function CommunityPage({ onSelectPage }) {
       await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ channel_id: chanId, participant_user_id: participantUserId })
+        body: JSON.stringify({ channel_id: chanId, participant_user_id: participantUserId, user_id: participantUserId })
       });
     } catch {}
 
@@ -1974,12 +2202,20 @@ export default function CommunityPage({ onSelectPage }) {
   };
 
   const handleDenyParticipant = async (chanId, participantUserId, notifId) => {
-    setChannels(channels.map(c => {
+    setChannels(prev => prev.map(c => {
       if (c.id === chanId) {
         return { ...c, pending_requests: (c.pending_requests || []).filter(r => r.user_id !== participantUserId) };
       }
       return c;
     }));
+
+    if (activeChannelObj && activeChannelObj.id === chanId) {
+      setActiveChannelObj(prev => {
+        if (!prev) return prev;
+        const updatedRequests = (prev.pending_requests || []).filter(r => r.user_id !== participantUserId);
+        return { ...prev, pending_requests: updatedRequests };
+      });
+    }
 
     if (notifId) {
       setNotifications(prev => prev.map(n => n.id === notifId ? { ...n, resolved: true, resolvedAction: 'discarded' } : n));
@@ -1993,7 +2229,7 @@ export default function CommunityPage({ onSelectPage }) {
       await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ channel_id: chanId, participant_user_id: participantUserId })
+        body: JSON.stringify({ channel_id: chanId, participant_user_id: participantUserId, user_id: participantUserId })
       });
     } catch {}
   };
@@ -2010,17 +2246,21 @@ export default function CommunityPage({ onSelectPage }) {
 
     setActiveDmUser(targetUser);
     setActiveChannelObj(null);
-    const dmKey = [currentUser.id, targetUser.id].sort().join('_');
+    const dmKey = [currentUser.id, targetUser.id].sort().join('__');
     setActiveChatRoom(`dm_${dmKey}`);
     setIsUserSearchModalOpen(false);
     setMobileView('chat');
 
-    // Add to persistent directChatUsers list
+    // Add to persistent directChatUsers list & guarantee localStorage persistence
     setDirectChatUsers(prev => {
-      if (prev.some(u => u.id === targetUser.id)) {
-        return prev.map(u => u.id === targetUser.id ? { ...u, ...targetUser } : u);
-      }
-      return [targetUser, ...prev];
+      const map = new Map();
+      for (const u of prev) map.set(u.id, u);
+      map.set(targetUser.id, { ...(map.get(targetUser.id) || {}), ...targetUser });
+      const updated = Array.from(map.values());
+      try {
+        localStorage.setItem('ep_direct_chat_users_' + currentUser.id, JSON.stringify(updated));
+      } catch {}
+      return updated;
     });
   };
 
@@ -2154,7 +2394,20 @@ export default function CommunityPage({ onSelectPage }) {
 
   // Filter messages for current active room and ensure strict chronological order
   const activeMessages = messages.filter(m => {
-    if (activeChatRoom === 'public') return m.channel_id === 'public';
+    if (activeChatRoom === 'public') return m.channel_id === 'public' || m.channel_id === 'chan_public';
+    if (activeChatRoom.startsWith('dm_')) {
+      if (m.channel_id === activeChatRoom) return true;
+      const rawCurrent = activeChatRoom.slice(3);
+      const rawMsg = (m.channel_id || '').slice(3);
+      if (rawCurrent.includes('__') && rawMsg.includes('_') && !rawMsg.includes('__')) {
+        const [c1, c2] = rawCurrent.split('__');
+        if (rawMsg.includes(c1) && rawMsg.includes(c2)) return true;
+      } else if (rawMsg.includes('__') && rawCurrent.includes('_') && !rawCurrent.includes('__')) {
+        const [m1, m2] = rawMsg.split('__');
+        if (rawCurrent.includes(m1) && rawCurrent.includes(m2)) return true;
+      }
+      return false;
+    }
     return m.channel_id === activeChatRoom;
   }).sort((a, b) => {
     const tA = parseMsgTime(a);
@@ -2525,8 +2778,9 @@ export default function CommunityPage({ onSelectPage }) {
                 </div>
               ) : (
                 directChatUsers.map((u) => {
-                  const dmKey = currentUser ? [currentUser.id, u.id].sort().join('_') : '';
-                  const isSelected = activeChatRoom === `dm_${dmKey}`;
+                  const dmKeyDouble = currentUser ? [currentUser.id, u.id].sort().join('__') : '';
+                  const dmKeySingle = currentUser ? [currentUser.id, u.id].sort().join('_') : '';
+                  const isSelected = activeChatRoom === `dm_${dmKeyDouble}` || activeChatRoom === `dm_${dmKeySingle}`;
                   return (
                     <div
                       key={u.id}
@@ -2560,18 +2814,18 @@ export default function CommunityPage({ onSelectPage }) {
           </div>
 
           {/* Active Direct Message Box if chatting with a friend */}
-          {activeDmUser && (
+          {(activeDmUser || derivedDmUser) && (
             <div className="bg-white border-3 border-black rounded-2xl p-4 shadow-[4px_4px_0px_#000] space-y-2">
               <div className="text-xs font-black uppercase text-gray-500">Active Direct Chat</div>
               <div className="flex items-center gap-2 p-2 bg-blue-50 border-2 border-black rounded-xl">
                 <img
-                  src={activeDmUser.avatar_url}
+                  src={(activeDmUser || derivedDmUser).avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${(activeDmUser || derivedDmUser).username}`}
                   alt=""
                   className="w-8 h-8 rounded-full border border-black object-cover"
                 />
                 <div className="text-xs">
-                  <div className="font-bold text-black">{activeDmUser.name}</div>
-                  <div className="text-[10px] font-mono text-gray-600">@{activeDmUser.username}</div>
+                  <div className="font-bold text-black">{(activeDmUser || derivedDmUser).name}</div>
+                  <div className="text-[10px] font-mono text-gray-600">@{(activeDmUser || derivedDmUser).username}</div>
                 </div>
               </div>
             </div>
@@ -2670,8 +2924,8 @@ export default function CommunityPage({ onSelectPage }) {
                 <span className="truncate">
                   {activeChatRoom === 'public'
                     ? 'PUBLIC CITIZEN FORUM'
-                    : activeDmUser
-                    ? `DIRECT CHAT: ${activeDmUser.name} (@${activeDmUser.username})`
+                    : (activeDmUser || derivedDmUser)
+                    ? `DIRECT CHAT: ${(activeDmUser || derivedDmUser).name} (@${(activeDmUser || derivedDmUser).username})`
                     : activeChannelObj?.name || 'PRIVATE CHANNEL'}
                 </span>
                 {activeChannelObj && activeChannelObj.creator_id === currentUser?.id && (
@@ -2686,7 +2940,7 @@ export default function CommunityPage({ onSelectPage }) {
               <div className="text-[9px] sm:text-[10px] md:text-[11px] font-semibold text-gray-800 truncate">
                 {activeChatRoom === 'public'
                   ? 'All registered patriotic voices welcome • Realtime sync'
-                  : activeDmUser
+                  : (activeDmUser || derivedDmUser)
                   ? 'End-to-end direct encrypted user session'
                   : `Host: @${activeChannelObj?.creator_username || 'creator'} • Invite-only channel`}
               </div>
@@ -3045,9 +3299,9 @@ export default function CommunityPage({ onSelectPage }) {
                               );
                             })()}
 
-                            {/* Bottom Clean Timestamp (Double tick icon removed) */}
+                            {/* Bottom Clean Timestamp (Double tick icon removed, strictly device-local real-time) */}
                             <div className="flex items-center justify-end gap-1 mt-1 text-[9px] font-mono text-gray-500 select-none">
-                              <span>{msg.created_at}</span>
+                              <span>{formatMsgDisplayTime(msg.created_at, msg.created_timestamp)}</span>
                               {msg.is_uploading && (
                                 <Clock className="w-2.5 h-2.5 text-gray-400 animate-pulse" title="Uploading & sending..." />
                               )}
@@ -4290,7 +4544,7 @@ export default function CommunityPage({ onSelectPage }) {
                           <span className="font-bold">@{notif.sender_username}</span>
                         )}
                       </div>
-                      <span className="text-[10px] font-mono text-gray-500">{notif.created_at}</span>
+                      <span className="text-[10px] font-mono text-gray-500">{formatMsgDisplayTime(notif.created_at, notif.created_timestamp)}</span>
                     </div>
 
                     <p className="text-gray-800 text-xs font-semibold">{notif.message}</p>
@@ -4810,6 +5064,60 @@ export default function CommunityPage({ onSelectPage }) {
         isOpen={isDonateOpen}
         onClose={() => setIsDonateOpen(false)}
       />
+
+      {/* Floating Instagram-Style Direct Message Notification Banner */}
+      {incomingDmToast && (
+        <div className="fixed top-4 right-4 sm:top-6 sm:right-6 z-[9999] max-w-sm w-[calc(100vw-2rem)] sm:w-96 animate-in fade-in slide-in-from-top-4 duration-300">
+          <div
+            onClick={() => handleClickDmToast(incomingDmToast)}
+            className="group cursor-pointer bg-white border-3 border-black rounded-2xl p-3.5 shadow-[6px_6px_0px_#000] hover:shadow-[3px_3px_0px_#000] hover:translate-x-0.5 hover:translate-y-0.5 transition-all relative overflow-hidden"
+          >
+            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-pink-500 via-purple-500 to-yellow-500" />
+            <div className="flex items-start gap-3">
+              <div className="relative shrink-0 mt-0.5">
+                <img
+                  src={incomingDmToast.senderAvatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${incomingDmToast.senderUsername}`}
+                  alt=""
+                  className="w-10 h-10 rounded-full border-2 border-black object-cover bg-yellow-100"
+                />
+                <span className="absolute -bottom-1 -right-1 w-3.5 h-3.5 bg-tirangaGreen border-2 border-black rounded-full" />
+              </div>
+              <div className="flex-1 min-w-0 pr-6">
+                <div className="flex items-center gap-1.5 mb-0.5">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-pink-600 bg-pink-100 px-1.5 py-0.5 rounded border border-pink-300 font-comic">
+                    Direct Message
+                  </span>
+                  <span className="text-[10px] font-mono text-gray-400">Just now</span>
+                </div>
+                <div className="text-xs font-black text-black truncate flex items-center gap-1">
+                  <span>{incomingDmToast.senderName}</span>
+                  <span className="text-[10px] font-normal text-gray-500 font-mono">@{incomingDmToast.senderUsername}</span>
+                </div>
+                <p className="text-xs text-gray-700 font-medium truncate mt-0.5">
+                  {incomingDmToast.content}
+                </p>
+                <div className="mt-2 flex items-center gap-2">
+                  <span className="inline-flex items-center gap-1 text-[11px] font-black uppercase text-black bg-[#FFE600] px-2.5 py-1 rounded-lg border border-black shadow-[1.5px_1.5px_0px_#000] group-hover:bg-yellow-400">
+                    <MessageSquare className="w-3 h-3" />
+                    Reply Now
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIncomingDmToast(null);
+                }}
+                className="absolute top-2.5 right-2.5 p-1 rounded-lg text-gray-400 hover:text-black hover:bg-gray-100 transition-colors"
+                title="Dismiss"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

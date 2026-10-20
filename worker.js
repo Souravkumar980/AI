@@ -1549,11 +1549,13 @@ class CloudflareDataStore {
   async getMessages() {
     if (this.d1) {
       try {
-        const { results } = await this.d1.prepare('SELECT * FROM community_messages ORDER BY created_at ASC LIMIT 100').all();
+        const { results } = await this.d1.prepare('SELECT * FROM community_messages ORDER BY created_at ASC LIMIT 150').all();
         if (Array.isArray(results) && results.length > 0) {
           return results.map(row => {
             let reactions = {};
             try { reactions = row.reactions_json ? JSON.parse(row.reactions_json) : {}; } catch (e) {}
+            const createdAtIso = row.created_at || new Date().toISOString();
+            const createdTs = new Date(createdAtIso).getTime() || Date.now();
             return {
               id: row.id,
               channel_id: row.channel_id || 'chan_public',
@@ -1564,13 +1566,185 @@ class CloudflareDataStore {
               verified_type: 'none',
               content: row.content,
               reactions: reactions,
-              created_at: new Date(row.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+              created_at: createdAtIso,
+              created_timestamp: createdTs
             };
           });
         }
       } catch (e) {}
     }
     return memoryState.messages;
+  }
+
+  // --- COMMUNITY CHANNELS (PERSISTED IN D1) ---
+  async getChannels() {
+    let dbChannels = [];
+    if (this.d1) {
+      try {
+        const { results } = await this.d1.prepare('SELECT * FROM community_channels ORDER BY created_at ASC').all();
+        if (Array.isArray(results) && results.length > 0) {
+          dbChannels = results.map(row => {
+            let members = [];
+            let pendingRequests = [];
+            try { members = row.members_json ? JSON.parse(row.members_json) : []; } catch (e) {}
+            try { pendingRequests = row.pending_requests_json ? JSON.parse(row.pending_requests_json) : []; } catch (e) {}
+            return {
+              id: row.id,
+              creator_id: row.creator_id,
+              creator_name: row.creator_name,
+              creator_username: row.creator_username,
+              name: row.name,
+              description: row.description || '',
+              join_token: row.join_token,
+              is_private: Number(row.is_private) || 0,
+              members: Array.isArray(members) ? members : [],
+              pending_requests: Array.isArray(pendingRequests) ? pendingRequests : [],
+              created_at: row.created_at
+            };
+          });
+        }
+      } catch (e) {
+        console.error('D1 getChannels error:', e);
+      }
+    }
+
+    const chanMap = new Map();
+    for (const c of memoryState.channels) chanMap.set(c.id, c);
+    for (const c of dbChannels) chanMap.set(c.id, { ...(chanMap.get(c.id) || {}), ...c });
+    return Array.from(chanMap.values());
+  }
+
+  async getChannelById(channelId) {
+    if (!channelId) return null;
+    const cleanId = String(channelId).trim();
+    const inMem = memoryState.channels.find(c => c.id === cleanId);
+    if (inMem) return inMem;
+    if (this.d1) {
+      try {
+        const row = await this.d1.prepare('SELECT * FROM community_channels WHERE id = ?').bind(cleanId).first();
+        if (row) {
+          let members = [];
+          let pendingRequests = [];
+          try { members = row.members_json ? JSON.parse(row.members_json) : []; } catch (e) {}
+          try { pendingRequests = row.pending_requests_json ? JSON.parse(row.pending_requests_json) : []; } catch (e) {}
+          const chan = {
+            id: row.id,
+            creator_id: row.creator_id,
+            creator_name: row.creator_name,
+            creator_username: row.creator_username,
+            name: row.name,
+            description: row.description || '',
+            join_token: row.join_token,
+            is_private: Number(row.is_private) || 0,
+            members: Array.isArray(members) ? members : [],
+            pending_requests: Array.isArray(pendingRequests) ? pendingRequests : [],
+            created_at: row.created_at
+          };
+          const idx = memoryState.channels.findIndex(c => c.id === chan.id);
+          if (idx >= 0) memoryState.channels[idx] = chan;
+          else memoryState.channels.push(chan);
+          return chan;
+        }
+      } catch (e) {}
+    }
+    return null;
+  }
+
+  async getChannelByToken(token) {
+    if (!token) return null;
+    const cleanToken = String(token).trim();
+    const inMem = memoryState.channels.find(c => c.join_token === cleanToken || c.id === cleanToken);
+    if (inMem) return inMem;
+    if (this.d1) {
+      try {
+        const row = await this.d1.prepare('SELECT * FROM community_channels WHERE join_token = ? OR id = ?').bind(cleanToken, cleanToken).first();
+        if (row) {
+          let members = [];
+          let pendingRequests = [];
+          try { members = row.members_json ? JSON.parse(row.members_json) : []; } catch (e) {}
+          try { pendingRequests = row.pending_requests_json ? JSON.parse(row.pending_requests_json) : []; } catch (e) {}
+          const chan = {
+            id: row.id,
+            creator_id: row.creator_id,
+            creator_name: row.creator_name,
+            creator_username: row.creator_username,
+            name: row.name,
+            description: row.description || '',
+            join_token: row.join_token,
+            is_private: Number(row.is_private) || 0,
+            members: Array.isArray(members) ? members : [],
+            pending_requests: Array.isArray(pendingRequests) ? pendingRequests : [],
+            created_at: row.created_at
+          };
+          const idx = memoryState.channels.findIndex(c => c.id === chan.id);
+          if (idx >= 0) memoryState.channels[idx] = chan;
+          else memoryState.channels.push(chan);
+          return chan;
+        }
+      } catch (e) {
+        console.error('D1 getChannelByToken error:', e);
+      }
+    }
+    return null;
+  }
+
+  async saveChannel(chan) {
+    const existingIdx = memoryState.channels.findIndex(c => c.id === chan.id);
+    if (existingIdx >= 0) {
+      memoryState.channels[existingIdx] = { ...memoryState.channels[existingIdx], ...chan };
+    } else {
+      memoryState.channels.push(chan);
+    }
+
+    if (this.d1) {
+      try {
+        await this.d1.prepare(`
+          INSERT INTO community_channels (id, creator_id, creator_name, creator_username, name, description, join_token, is_private, members_json, pending_requests_json, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET
+            name = excluded.name,
+            description = excluded.description,
+            is_private = excluded.is_private,
+            members_json = excluded.members_json,
+            pending_requests_json = excluded.pending_requests_json
+        `).bind(
+          chan.id, chan.creator_id, chan.creator_name, chan.creator_username,
+          chan.name, chan.description || '', chan.join_token, chan.is_private ? 1 : 0,
+          JSON.stringify(chan.members || []), JSON.stringify(chan.pending_requests || []), chan.created_at || new Date().toISOString()
+        ).run();
+      } catch (e) {
+        console.error('D1 saveChannel error:', e);
+      }
+    }
+    return chan;
+  }
+
+  // --- NOTIFICATIONS (PERSISTED IN D1 KV) ---
+  async getNotifications() {
+    if (this.d1) {
+      try {
+        const row = await this.d1.prepare("SELECT value_json FROM site_kv_store WHERE key = 'community_notifications'").first();
+        if (row && row.value_json) {
+          const parsed = JSON.parse(row.value_json);
+          if (Array.isArray(parsed)) return parsed;
+        }
+      } catch (e) {}
+    }
+    return memoryState.notifications;
+  }
+
+  async saveNotification(notif) {
+    memoryState.notifications.unshift(notif);
+    if (memoryState.notifications.length > 200) memoryState.notifications.pop();
+    if (this.d1) {
+      try {
+        await this.d1.prepare(`
+          INSERT INTO site_kv_store (key, value_json, updated_at)
+          VALUES ('community_notifications', ?, ?)
+          ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at
+        `).bind(JSON.stringify(memoryState.notifications), new Date().toISOString()).run();
+      } catch (e) {}
+    }
   }
 
   async getStatus() {
@@ -1911,6 +2085,8 @@ export default {
       const isAdmin = isAuthorizedAdmin(request, url);
       const dbUsers = await dbStore.getUsers();
       const dbMessages = await dbStore.getMessages();
+      const dbChannels = await dbStore.getChannels();
+      const dbNotifications = await dbStore.getNotifications();
       const liveCount = await dbStore.getLiveCount();
 
       // Merge memoryState.users with dbUsers
@@ -1943,8 +2119,8 @@ export default {
       return new Response(JSON.stringify({
         users: sanitizedUsers,
         messages: mergedMessages.length > 0 ? mergedMessages : memoryState.messages,
-        channels: memoryState.channels,
-        notifications: memoryState.notifications,
+        channels: dbChannels,
+        notifications: dbNotifications,
         onlineCount: liveCount,
         serverTime: new Date().toISOString()
       }), { headers: JSON_HEADERS });
@@ -2370,6 +2546,7 @@ export default {
 
         const msgId = id || ('msg_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5));
         const nowMs = Date.now();
+        const nowIso = new Date().toISOString();
 
         const newMsg = {
           id: msgId,
@@ -2387,7 +2564,7 @@ export default {
           reply_to: reply_to || null,
           is_deleted: 0,
           created_timestamp: nowMs,
-          created_at: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+          created_at: nowIso
         };
 
         const existingIdx = memoryState.messages.findIndex(m => m.id === newMsg.id);
@@ -2407,10 +2584,57 @@ export default {
             `).bind(
               newMsg.id, newMsg.channel_id || 'chan_public', newMsg.user_id,
               newMsg.username, newMsg.content || '', newMsg.gif_url || (newMsg.attachments?.[0]?.url || null),
-              JSON.stringify(newMsg.reactions || {}), new Date().toISOString()
+              JSON.stringify(newMsg.reactions || {}), nowIso
             ).run();
           } catch (e) {
             console.error('D1 message save error:', e);
+          }
+        }
+
+        // Direct Message Notification for Recipient
+        if (newMsg.channel_id && newMsg.channel_id.startsWith('dm_')) {
+          try {
+            let recId = body.recipient_id;
+            let recUname = body.recipient_username;
+            if (!recId) {
+              const raw = newMsg.channel_id.replace(/^dm_/, '');
+              if (raw.includes('__')) {
+                const parts = raw.split('__');
+                recId = parts[0] === user_id ? parts[1] : parts[0];
+              } else {
+                const allU = await dbStore.getUsers();
+                for (const u of allU) {
+                  if (u.id !== user_id && raw.includes(u.id)) {
+                    recId = u.id;
+                    recUname = u.username;
+                    break;
+                  }
+                }
+              }
+            }
+            if (recId) {
+              const allU = await dbStore.getUsers();
+              const recUser = allU.find(u => u.id === recId || (recUname && u.username.toLowerCase() === recUname.toLowerCase()));
+              const dmNotif = {
+                id: 'notif_dm_' + nowMs + '_' + Math.random().toString(36).substr(2, 4),
+                type: 'direct_message',
+                recipient_id: recId,
+                recipient_username: (recUser?.username || recUname || '').toLowerCase(),
+                sender_id: user_id,
+                sender_username: username,
+                sender_name: user_name || username,
+                sender_avatar: user_avatar,
+                dm_user_id: user_id,
+                channel_id: newMsg.channel_id,
+                message: `@${username} (${user_name || username}) sent you a direct message: "${(newMsg.content || 'Sent an attachment').slice(0, 60)}"`,
+                created_at: nowIso,
+                created_timestamp: nowMs
+              };
+              await dbStore.saveNotification(dmNotif);
+              broadcastSSE({ type: 'NEW_NOTIFICATION', notification: dmNotif });
+            }
+          } catch (notifErr) {
+            console.error('DM notification dispatch error:', notifErr);
           }
         }
 
@@ -2459,6 +2683,26 @@ export default {
       return new Response(JSON.stringify({ success: true, deletedId: msgId }), { headers: JSON_HEADERS });
     }
 
+    // -------------------------------------------------------------
+    // COMMUNITY: CHANNELS & INVITE LINKS
+    // -------------------------------------------------------------
+    if (path === '/api/community/channels' && request.method === 'GET') {
+      const channels = await dbStore.getChannels();
+      return new Response(JSON.stringify({ success: true, channels }), { headers: JSON_HEADERS });
+    }
+
+    if ((path === '/api/community/channels/join' || path === '/api/community/channels/by-token') && request.method === 'GET') {
+      const token = (url.searchParams.get('token') || url.searchParams.get('join') || '').trim();
+      if (!token) {
+        return new Response(JSON.stringify({ error: 'Token is required' }), { status: 400, headers: JSON_HEADERS });
+      }
+      const chan = await dbStore.getChannelByToken(token);
+      if (!chan) {
+        return new Response(JSON.stringify({ error: 'Channel not found or invalid invite token' }), { status: 404, headers: JSON_HEADERS });
+      }
+      return new Response(JSON.stringify({ success: true, channel: chan }), { headers: JSON_HEADERS });
+    }
+
     if (path === '/api/community/channels' && request.method === 'POST') {
       try {
         const body = await request.json();
@@ -2469,7 +2713,7 @@ export default {
           creator_id,
           creator_name,
           creator_username,
-          name: name.trim(),
+          name: (name || 'Private Channel').trim(),
           description: description || '',
           join_token: Math.random().toString(36).substr(2, 8).toUpperCase(),
           is_private: is_private ? 1 : 0,
@@ -2478,21 +2722,8 @@ export default {
           created_at: new Date().toISOString()
         };
 
-        memoryState.channels.push(newChan);
+        await dbStore.saveChannel(newChan);
         broadcastSSE({ type: 'CHANNEL_CREATED', channel: newChan });
-
-        if (dbStore.d1) {
-          try {
-            await dbStore.d1.prepare(`
-              INSERT INTO community_channels (id, creator_id, creator_name, creator_username, name, description, join_token, is_private, members_json, pending_requests_json, created_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            `).bind(
-              newChan.id, newChan.creator_id, newChan.creator_name, newChan.creator_username,
-              newChan.name, newChan.description, newChan.join_token, newChan.is_private,
-              JSON.stringify(newChan.members), JSON.stringify(newChan.pending_requests), newChan.created_at
-            ).run();
-          } catch (e) {}
-        }
 
         return new Response(JSON.stringify({ success: true, channel: newChan }), { headers: JSON_HEADERS });
       } catch (err) {
@@ -2503,16 +2734,45 @@ export default {
     if (path === '/api/community/channels/request' && request.method === 'POST') {
       try {
         const body = await request.json();
-        const { channel_id, user_id, user_name, username } = body;
-        const chan = memoryState.channels.find(c => c.id === channel_id);
+        const { channel_id, user_id, user_name, username, avatar_url, name } = body;
+        const chan = await dbStore.getChannelById(channel_id) || memoryState.channels.find(c => c.id === channel_id);
         if (chan) {
           if (!chan.pending_requests) chan.pending_requests = [];
           if (!chan.pending_requests.some(r => r.user_id === user_id)) {
-            chan.pending_requests.push({ user_id, user_name, username, requested_at: new Date().toISOString() });
+            chan.pending_requests.push({
+              user_id,
+              name: name || user_name || username || 'Citizen',
+              username: username || '',
+              avatar_url: avatar_url || '',
+              requested_at: new Date().toISOString()
+            });
           }
+          await dbStore.saveChannel(chan);
+
+          // Dispatch notification to channel creator
+          const notifReq = {
+            id: 'notif_chan_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+            type: 'channel_request',
+            channel_id: chan.id,
+            channel_name: chan.name,
+            requester_id: user_id,
+            requester_name: name || user_name || username || 'Citizen',
+            requester_username: username || '',
+            requester_avatar: avatar_url || '',
+            recipient_id: chan.creator_id,
+            recipient_username: (chan.creator_username || '').toLowerCase(),
+            sender_id: user_id,
+            sender_username: username || '',
+            sender_name: name || user_name || username || 'Citizen',
+            message: `@${username} (${name || user_name || username}) requested to participate in your private channel "${chan.name}"`,
+            created_at: new Date().toISOString(),
+            created_timestamp: Date.now()
+          };
+          await dbStore.saveNotification(notifReq);
+          broadcastSSE({ type: 'NEW_NOTIFICATION', notification: notifReq });
           broadcastSSE({ type: 'CHANNEL_UPDATED', channel: chan });
         }
-        return new Response(JSON.stringify({ success: true }), { headers: JSON_HEADERS });
+        return new Response(JSON.stringify({ success: true, channel: chan }), { headers: JSON_HEADERS });
       } catch (e) {
         return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: JSON_HEADERS });
       }
@@ -2521,17 +2781,44 @@ export default {
     if (path === '/api/community/channels/admit' && request.method === 'POST') {
       try {
         const body = await request.json();
-        const { channel_id, user_id } = body;
-        const chan = memoryState.channels.find(c => c.id === channel_id);
+        const channel_id = body.channel_id;
+        const participant_user_id = body.participant_user_id || body.user_id;
+        const chan = await dbStore.getChannelById(channel_id) || memoryState.channels.find(c => c.id === channel_id);
         if (chan) {
-          chan.pending_requests = (chan.pending_requests || []).filter(r => r.user_id !== user_id);
-          if (!chan.members.some(m => m.user_id === user_id)) {
-            const user = memoryState.users.find(u => u.id === user_id);
-            chan.members.push({ user_id, username: user?.username || 'member', role: 'member' });
+          chan.pending_requests = (chan.pending_requests || []).filter(r => r.user_id !== participant_user_id);
+          if (!chan.members) chan.members = [];
+          if (!chan.members.some(m => (typeof m === 'string' ? m === participant_user_id : m?.user_id === participant_user_id))) {
+            const allU = await dbStore.getUsers();
+            const admittedUser = allU.find(u => u.id === participant_user_id);
+            chan.members.push({
+              user_id: participant_user_id,
+              username: admittedUser?.username || 'member',
+              name: admittedUser?.name || 'Member',
+              role: 'member'
+            });
           }
+          await dbStore.saveChannel(chan);
+
+          // Dispatch notification to admitted user
+          const notifAdmit = {
+            id: 'notif_admit_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+            type: 'channel_admit',
+            channel_id: chan.id,
+            channel_name: chan.name,
+            recipient_id: participant_user_id,
+            requester_id: participant_user_id,
+            sender_id: chan.creator_id,
+            sender_username: chan.creator_username,
+            sender_name: chan.creator_name,
+            message: `✓ You have been approved to participate in private channel "${chan.name}"!`,
+            created_at: new Date().toISOString(),
+            created_timestamp: Date.now()
+          };
+          await dbStore.saveNotification(notifAdmit);
+          broadcastSSE({ type: 'NEW_NOTIFICATION', notification: notifAdmit });
           broadcastSSE({ type: 'CHANNEL_UPDATED', channel: chan });
         }
-        return new Response(JSON.stringify({ success: true }), { headers: JSON_HEADERS });
+        return new Response(JSON.stringify({ success: true, channel: chan }), { headers: JSON_HEADERS });
       } catch (e) {
         return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: JSON_HEADERS });
       }
@@ -2540,13 +2827,15 @@ export default {
     if (path === '/api/community/channels/deny' && request.method === 'POST') {
       try {
         const body = await request.json();
-        const { channel_id, user_id } = body;
-        const chan = memoryState.channels.find(c => c.id === channel_id);
+        const channel_id = body.channel_id;
+        const participant_user_id = body.participant_user_id || body.user_id;
+        const chan = await dbStore.getChannelById(channel_id) || memoryState.channels.find(c => c.id === channel_id);
         if (chan) {
-          chan.pending_requests = (chan.pending_requests || []).filter(r => r.user_id !== user_id);
+          chan.pending_requests = (chan.pending_requests || []).filter(r => r.user_id !== participant_user_id);
+          await dbStore.saveChannel(chan);
           broadcastSSE({ type: 'CHANNEL_UPDATED', channel: chan });
         }
-        return new Response(JSON.stringify({ success: true }), { headers: JSON_HEADERS });
+        return new Response(JSON.stringify({ success: true, channel: chan }), { headers: JSON_HEADERS });
       } catch (e) {
         return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: JSON_HEADERS });
       }
