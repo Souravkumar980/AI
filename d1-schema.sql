@@ -158,13 +158,27 @@ CREATE TABLE IF NOT EXISTS community_messages (
   channel_id TEXT NOT NULL DEFAULT 'chan_public',
   user_id TEXT NOT NULL,
   username TEXT NOT NULL,
+  user_name TEXT,
+  user_avatar TEXT,
+  verified_type TEXT DEFAULT 'none',
   content TEXT NOT NULL,
   image_url TEXT,
+  gif_url TEXT,
+  attachments_json TEXT,
   reactions_json TEXT,
+  reply_to_json TEXT,
   created_at TEXT NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_comm_messages_chan ON community_messages(channel_id, created_at);
+
+-- 10b. Community Files & Media Storage (Persistent across isolates & cold starts)
+CREATE TABLE IF NOT EXISTS community_files (
+  file_name TEXT PRIMARY KEY,
+  mime_type TEXT NOT NULL,
+  data TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
 
 -- 11. Global App Key-Value Store (for settings, polls, traffic, announcements)
 CREATE TABLE IF NOT EXISTS site_kv_store (

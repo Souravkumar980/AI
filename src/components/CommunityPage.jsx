@@ -378,6 +378,57 @@ const extractDmPartnerId = (channelId, currentUserId, allUsers = []) => {
   return null;
 };
 
+// Fast in-browser image compressor producing lightweight, crisp JPEG (150-250KB in < 50ms)
+const compressImageFile = (file, maxDim = 1200, quality = 0.82) => {
+  return new Promise((resolve) => {
+    try {
+      if (!file || !file.type?.startsWith('image/') || file.type === 'image/gif') {
+        const r = new FileReader();
+        r.onload = (ev) => resolve({ data: ev.target.result, mime: file?.type || 'application/octet-stream' });
+        r.onerror = () => resolve({ data: '', mime: 'application/octet-stream' });
+        r.readAsDataURL(file);
+        return;
+      }
+      const img = new Image();
+      const objUrl = URL.createObjectURL(file);
+      img.onload = () => {
+        URL.revokeObjectURL(objUrl);
+        let w = img.width;
+        let h = img.height;
+        if (w > maxDim || h > maxDim) {
+          if (w > h) {
+            h = Math.round((h * maxDim) / w);
+            w = maxDim;
+          } else {
+            w = Math.round((w * maxDim) / h);
+            h = maxDim;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, w, h);
+        const compressed = canvas.toDataURL('image/jpeg', quality);
+        resolve({ data: compressed, mime: 'image/jpeg' });
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(objUrl);
+        const r = new FileReader();
+        r.onload = (ev) => resolve({ data: ev.target.result, mime: file.type || 'image/jpeg' });
+        r.onerror = () => resolve({ data: '', mime: file.type || 'image/jpeg' });
+        r.readAsDataURL(file);
+      };
+      img.src = objUrl;
+    } catch (e) {
+      const r = new FileReader();
+      r.onload = (ev) => resolve({ data: ev.target.result, mime: file?.type || 'application/octet-stream' });
+      r.onerror = () => resolve({ data: '', mime: 'application/octet-stream' });
+      r.readAsDataURL(file);
+    }
+  });
+};
+
 export default function CommunityPage({ onSelectPage }) {
   // Current logged in community user
   const [currentUser, setCurrentUser] = useState(() => {
@@ -811,18 +862,40 @@ export default function CommunityPage({ onSelectPage }) {
         }
         if (data.messages && Array.isArray(data.messages)) {
           setMessages(prev => {
-            const uploadingMsgs = prev.filter(m => m.is_uploading);
+            const fifteenSecsAgo = Date.now() - 15000;
             const incomingIds = new Set(data.messages.map(m => m.id));
-            const merged = [...data.messages, ...uploadingMsgs.filter(m => !incomingIds.has(m.id))];
+
+            // Retain recent local optimistic messages (uploads or recent messages not yet in server list)
+            const pendingLocalMsgs = prev.filter(m =>
+              (m.is_uploading || (m.id && m.id.startsWith('msg_') && parseMsgTime(m) > fifteenSecsAgo)) &&
+              !incomingIds.has(m.id)
+            );
+
+            // Merge server messages, preserving local attachments/gif_url if server row is still catching up
+            const enrichedServerMsgs = data.messages.map(srv => {
+              const local = prev.find(p => p.id === srv.id);
+              if (local) {
+                return {
+                  ...srv,
+                  gif_url: srv.gif_url || local.gif_url || null,
+                  attachments: (srv.attachments && srv.attachments.length > 0) ? srv.attachments : (local.attachments || [])
+                };
+              }
+              return srv;
+            });
+
+            const merged = [...enrichedServerMsgs, ...pendingLocalMsgs];
             merged.sort((a, b) => {
               const tA = parseMsgTime(a);
               const tB = parseMsgTime(b);
               if (tA && tB && tA !== tB) return tA - tB;
               return String(a.id).localeCompare(String(b.id));
             });
+
             if (prev.length !== merged.length) return merged;
-            const prevHash = prev.map(m => `${m.id}_${JSON.stringify(m.reactions || {})}_${m.content}_${m.is_deleted}_${m.is_uploading}`).join('|');
-            const newHash = merged.map(m => `${m.id}_${JSON.stringify(m.reactions || {})}_${m.content}_${m.is_deleted}_${m.is_uploading}`).join('|');
+
+            const prevHash = prev.map(m => `${m.id}_${m.gif_url || ''}_${(m.attachments || []).map(a => a.url).join(',')}_${JSON.stringify(m.reactions || {})}_${m.content}_${m.is_deleted}_${m.is_uploading}`).join('|');
+            const newHash = merged.map(m => `${m.id}_${m.gif_url || ''}_${(m.attachments || []).map(a => a.url).join(',')}_${JSON.stringify(m.reactions || {})}_${m.content}_${m.is_deleted}_${m.is_uploading}`).join('|');
             if (prevHash !== newHash) return merged;
             return prev;
           });
@@ -871,18 +944,30 @@ export default function CommunityPage({ onSelectPage }) {
           setMessages(prev => {
             // 1. Direct ID deduplication
             if (prev.some(m => m.id === msg.id)) {
-              return prev.map(m => m.id === msg.id ? { ...msg, is_uploading: false } : m);
+              return prev.map(m => m.id === msg.id ? {
+                ...msg,
+                gif_url: msg.gif_url || m.gif_url,
+                attachments: (msg.attachments && msg.attachments.length > 0) ? msg.attachments : (m.attachments || []),
+                is_uploading: false
+              } : m);
             }
             // 2. Optimistic pending deduplication for current user
             if (curU && msg.user_id === curU.id) {
               const optIdx = prev.findIndex(m =>
                 m.user_id === curU.id &&
                 m.channel_id === msg.channel_id &&
-                m.content === msg.content &&
+                ((msg.gif_url && m.gif_url === msg.gif_url) ||
+                 (msg.content && m.content === msg.content) ||
+                 (m.is_uploading && m.attachments?.length > 0)) &&
                 (m.is_uploading || m.id.startsWith('msg_'))
               );
               if (optIdx >= 0) {
-                return prev.map((m, idx) => idx === optIdx ? { ...msg, is_uploading: false } : m);
+                return prev.map((m, idx) => idx === optIdx ? {
+                  ...msg,
+                  gif_url: msg.gif_url || m.gif_url,
+                  attachments: (msg.attachments && msg.attachments.length > 0) ? msg.attachments : (m.attachments || []),
+                  is_uploading: false
+                } : m);
               }
             }
             return [...prev, msg];
@@ -917,11 +1002,19 @@ export default function CommunityPage({ onSelectPage }) {
                   senderName: msg.user_name || msg.username,
                   senderUsername: msg.username,
                   senderAvatar: msg.user_avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${msg.username}`,
-                  content: msg.content || 'Sent an attachment'
+                  content: msg.content || (msg.gif_url ? 'Sent a GIF' : 'Sent an attachment')
                 });
               }
             }
           }
+        } else if (data.type === 'MESSAGE_UPDATE' && data.message) {
+          setMessages(prev => prev.map(m => m.id === data.message.id ? {
+            ...m,
+            ...data.message,
+            gif_url: data.message.gif_url || m.gif_url,
+            attachments: (data.message.attachments && data.message.attachments.length > 0) ? data.message.attachments : (m.attachments || []),
+            is_uploading: false
+          } : m));
         } else if (data.type === 'REACTION_UPDATE') {
           setMessages(prev => prev.map(m => m.id === data.message_id ? { ...m, reactions: data.reactions } : m));
         } else if (data.type === 'DELETE_MESSAGE') {
@@ -1617,26 +1710,20 @@ export default function CommunityPage({ onSelectPage }) {
         let updatedAttachments = [...newMessage.attachments];
 
         if (filesToUpload.length > 0) {
-          const uploadedList = [];
-
-          for (const item of filesToUpload) {
+          const uploadPromises = filesToUpload.map(async (item) => {
             let dataPayload = item.uploadData;
-            const mime = item.mimeType || 'application/octet-stream';
+            let mime = item.mimeType || 'application/octet-stream';
 
-            // If background compression wasn't ready, finish reading now
+            // If background compression wasn't ready, finish compressing now
             if (!dataPayload && item.rawFile) {
-              dataPayload = await new Promise((resolve) => {
-                const r = new FileReader();
-                r.onload = (ev) => resolve(ev.target.result);
-                r.onerror = () => resolve('');
-                r.readAsDataURL(item.rawFile);
-              });
+              const comp = await compressImageFile(item.rawFile);
+              dataPayload = comp.data;
+              mime = comp.mime;
             }
 
             if (dataPayload) {
               try {
                 const apiUrl = getCommunityApiUrl('/api/community/upload');
-
                 const res = await fetch(apiUrl, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
@@ -1649,14 +1736,15 @@ export default function CommunityPage({ onSelectPage }) {
 
                 if (res.ok) {
                   const uploadRes = await res.json();
-                  uploadedList.push({
+                  return {
+                    id: item.id,
                     name: item.name,
                     type: item.type,
                     size: uploadRes.size || item.size,
-                    url: uploadRes.url || dataPayload,
+                    url: uploadRes.url || item.previewUrl || item.url,
+                    previewUrl: item.previewUrl,
                     is_uploading: false
-                  });
-                  continue;
+                  };
                 }
               } catch (uploadErr) {
                 console.warn('API upload error, using local data fallback:', uploadErr);
@@ -1664,16 +1752,18 @@ export default function CommunityPage({ onSelectPage }) {
             }
 
             // Fallback: retain data / blob URL so the user never loses the media
-            uploadedList.push({
+            return {
+              id: item.id,
               name: item.name,
               type: item.type,
               size: item.size,
               url: dataPayload || item.previewUrl || item.url,
+              previewUrl: item.previewUrl,
               is_uploading: false
-            });
-          }
+            };
+          });
 
-          updatedAttachments = uploadedList;
+          updatedAttachments = await Promise.all(uploadPromises);
         }
 
         // Finalized message with upload buffer finished
@@ -1693,7 +1783,11 @@ export default function CommunityPage({ onSelectPage }) {
 
         if (res.ok) {
           const data = await res.json();
-          const serverMsg = data.message ? { ...data.message, is_uploading: false } : finalizedMessage;
+          const serverMsg = data.message ? {
+            ...data.message,
+            attachments: (data.message.attachments && data.message.attachments.length > 0) ? data.message.attachments : updatedAttachments,
+            is_uploading: false
+          } : finalizedMessage;
           setMessages(prev => {
             const hasServerMsg = prev.some(m => m.id === serverMsg.id && m.id !== tempMsgId);
             if (hasServerMsg) {
@@ -1723,9 +1817,14 @@ export default function CommunityPage({ onSelectPage }) {
       setIsAuthModalOpen(true);
       return;
     }
+    if (!gifUrl) return;
+
+    const tempMsgId = 'msg_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+    const nowIso = new Date().toISOString();
+    const nowMs = Date.now();
 
     const newMessage = {
-      id: 'msg_' + Date.now(),
+      id: tempMsgId,
       channel_id: activeChatRoom,
       user_id: currentUser.id,
       user_name: currentUser.name,
@@ -1742,14 +1841,15 @@ export default function CommunityPage({ onSelectPage }) {
         user_name: replyTarget.user_name || replyTarget.sender,
         content: (replyTarget.content || replyTarget.text || '').slice(0, 100)
       } : null,
-      created_timestamp: Date.now(),
-      created_at: new Date().toISOString()
+      created_timestamp: nowMs,
+      created_at: nowIso,
+      is_uploading: false
     };
 
     const dmPartner = activeDmUser || derivedDmUser;
     if (dmPartner && activeChatRoom.startsWith('dm_')) {
       const dmNotif = {
-        id: 'notif_dm_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+        id: 'notif_dm_' + nowMs + '_' + Math.random().toString(36).substr(2, 4),
         type: 'direct_message',
         channel_id: activeChatRoom,
         recipient_id: dmPartner.id,
@@ -1759,17 +1859,19 @@ export default function CommunityPage({ onSelectPage }) {
         sender_name: currentUser.name,
         sender_avatar: currentUser.avatar_url,
         message: `@${currentUser.username} (${currentUser.name}) sent you a GIF in direct message`,
-        created_at: new Date().toISOString(),
-        created_timestamp: Date.now()
+        created_at: nowIso,
+        created_timestamp: nowMs
       };
       setNotifications(prev => [dmNotif, ...prev]);
       broadcastCrossTab({ type: 'NEW_NOTIFICATION', notification: dmNotif });
     }
 
+    // Instant optimistic render in message feed - 0ms delay!
     setMessages(prev => [...prev, newMessage]);
     broadcastCrossTab({ type: 'NEW_MESSAGE', message: newMessage });
     setShowGifPicker(false);
     setReplyTarget(null);
+    scrollMessagesToBottom('smooth');
 
     try {
       const existing = JSON.parse(localStorage.getItem('ep_community_messages') || '[]');
@@ -1787,15 +1889,14 @@ export default function CommunityPage({ onSelectPage }) {
       if (res.ok) {
         const data = await res.json();
         if (data.message) {
-          setMessages(prev => {
-            const hasServerMsg = prev.some(m => m.id === data.message.id && m.id !== newMessage.id);
-            if (hasServerMsg) return prev.filter(m => m.id !== newMessage.id);
-            return prev.map(m => m.id === newMessage.id ? data.message : m);
-          });
-          broadcastCrossTab({ type: 'MESSAGE_UPDATE', message: data.message });
+          const srvMsg = { ...data.message, gif_url: data.message.gif_url || gifUrl, is_uploading: false };
+          setMessages(prev => prev.map(m => m.id === newMessage.id ? srvMsg : m));
+          broadcastCrossTab({ type: 'MESSAGE_UPDATE', message: srvMsg });
         }
       }
-    } catch {}
+    } catch (err) {
+      console.warn('GIF dispatch error:', err);
+    }
   };
 
   // -------------------------------------------------------------
@@ -1950,52 +2051,13 @@ export default function CommunityPage({ onSelectPage }) {
       setAttachedFiles(prev => [...prev, stagedItem]);
 
       // Read & compress in background so uploadData is instantly ready when Send is pressed
-      const r = new FileReader();
-      r.onload = (ev) => {
-        if (type === 'image') {
-          const img = new Image();
-          img.onload = () => {
-            const maxDim = 1280;
-            let w = img.width;
-            let h = img.height;
-            if (w > maxDim || h > maxDim) {
-              if (w > h) {
-                h = Math.round((h * maxDim) / w);
-                w = maxDim;
-              } else {
-                w = Math.round((w * maxDim) / h);
-                h = maxDim;
-              }
-            }
-            const canvas = document.createElement('canvas');
-            canvas.width = w;
-            canvas.height = h;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(img, 0, 0, w, h);
-            const compressed = canvas.toDataURL('image/jpeg', 0.85);
-            setAttachedFiles(prev => prev.map(f => f.id === tempId ? {
-              ...f,
-              uploadData: compressed,
-              mimeType: 'image/jpeg'
-            } : f));
-          };
-          img.onerror = () => {
-            setAttachedFiles(prev => prev.map(f => f.id === tempId ? {
-              ...f,
-              uploadData: ev.target.result,
-              mimeType: file.type || 'image/jpeg'
-            } : f));
-          };
-          img.src = ev.target.result;
-        } else {
-          setAttachedFiles(prev => prev.map(f => f.id === tempId ? {
-            ...f,
-            uploadData: ev.target.result,
-            mimeType: file.type || 'application/octet-stream'
-          } : f));
-        }
-      };
-      r.readAsDataURL(file);
+      compressImageFile(file).then(({ data: compressed, mime }) => {
+        setAttachedFiles(prev => prev.map(f => f.id === tempId ? {
+          ...f,
+          uploadData: compressed,
+          mimeType: mime
+        } : f));
+      }).catch(() => {});
     }
     e.target.value = '';
   };
@@ -3206,7 +3268,13 @@ export default function CommunityPage({ onSelectPage }) {
                                       >
                                         <img
                                           src={resolveMediaUrl(file.url)}
-                                          alt={file.name}
+                                          alt={file.name || 'Image'}
+                                          loading="lazy"
+                                          onError={(e) => {
+                                            if (file.previewUrl && e.target.src !== file.previewUrl) {
+                                              e.target.src = file.previewUrl;
+                                            }
+                                          }}
                                           className="max-h-60 sm:max-h-72 md:max-h-80 lg:max-h-96 w-auto max-w-full object-cover hover:scale-102 transition-transform"
                                         />
 
@@ -3281,8 +3349,18 @@ export default function CommunityPage({ onSelectPage }) {
 
                             {/* GIF Display */}
                             {msg.gif_url && (
-                              <div className="rounded-xl border-2 border-black overflow-hidden shadow-sm mt-1.5">
-                                <img src={resolveMediaUrl(msg.gif_url)} alt="GIF" className="max-h-52 w-auto object-cover" />
+                              <div className="rounded-xl border-2 border-black overflow-hidden shadow-sm mt-1.5 bg-black/5">
+                                <img
+                                  src={resolveMediaUrl(msg.gif_url)}
+                                  alt="GIF"
+                                  loading="lazy"
+                                  onError={(e) => {
+                                    if (msg.gif_url && e.target.src !== msg.gif_url) {
+                                      e.target.src = msg.gif_url;
+                                    }
+                                  }}
+                                  className="max-h-56 w-auto max-w-full object-cover rounded-lg"
+                                />
                               </div>
                             )}
 

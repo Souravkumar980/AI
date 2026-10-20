@@ -665,9 +665,21 @@ class CloudflareDataStore {
             channel_id TEXT NOT NULL DEFAULT 'chan_public',
             user_id TEXT NOT NULL,
             username TEXT NOT NULL,
+            user_name TEXT,
+            user_avatar TEXT,
+            verified_type TEXT DEFAULT 'none',
             content TEXT NOT NULL,
             image_url TEXT,
+            gif_url TEXT,
+            attachments_json TEXT,
             reactions_json TEXT,
+            reply_to_json TEXT,
+            created_at TEXT NOT NULL
+          );
+          CREATE TABLE IF NOT EXISTS community_files (
+            file_name TEXT PRIMARY KEY,
+            mime_type TEXT NOT NULL,
+            data TEXT NOT NULL,
             created_at TEXT NOT NULL
           );
           CREATE TABLE IF NOT EXISTS site_kv_store (
@@ -692,6 +704,14 @@ class CloudflareDataStore {
         try {
           await this.d1.exec(`ALTER TABLE community_users ADD COLUMN name_change_count INTEGER NOT NULL DEFAULT 0;`);
         } catch (e) {}
+
+        // Migration safety for columns in community_messages
+        try { await this.d1.exec(`ALTER TABLE community_messages ADD COLUMN user_name TEXT;`); } catch (e) {}
+        try { await this.d1.exec(`ALTER TABLE community_messages ADD COLUMN user_avatar TEXT;`); } catch (e) {}
+        try { await this.d1.exec(`ALTER TABLE community_messages ADD COLUMN verified_type TEXT DEFAULT 'none';`); } catch (e) {}
+        try { await this.d1.exec(`ALTER TABLE community_messages ADD COLUMN gif_url TEXT;`); } catch (e) {}
+        try { await this.d1.exec(`ALTER TABLE community_messages ADD COLUMN attachments_json TEXT;`); } catch (e) {}
+        try { await this.d1.exec(`ALTER TABLE community_messages ADD COLUMN reply_to_json TEXT;`); } catch (e) {}
 
         // Ensure master admin user exists in community_users
         try {
@@ -1549,29 +1569,75 @@ class CloudflareDataStore {
   async getMessages() {
     if (this.d1) {
       try {
-        const { results } = await this.d1.prepare('SELECT * FROM community_messages ORDER BY created_at ASC LIMIT 150').all();
+        const { results } = await this.d1.prepare('SELECT * FROM community_messages ORDER BY created_at ASC LIMIT 200').all();
         if (Array.isArray(results) && results.length > 0) {
+          const allUsers = await this.getUsers();
+          const userMap = new Map();
+          for (const u of allUsers) userMap.set(u.id, u);
+
           return results.map(row => {
             let reactions = {};
             try { reactions = row.reactions_json ? JSON.parse(row.reactions_json) : {}; } catch (e) {}
+
+            let attachments = [];
+            if (row.attachments_json) {
+              try {
+                const parsed = JSON.parse(row.attachments_json);
+                if (Array.isArray(parsed)) attachments = parsed;
+              } catch (e) {}
+            }
+
+            let gifUrl = row.gif_url || null;
+            if (!gifUrl && row.image_url) {
+              if (row.image_url.includes('giphy.com') || row.image_url.includes('.gif') || row.image_url.includes('api.giphy.com') || row.image_url.startsWith('data:image/gif')) {
+                gifUrl = row.image_url;
+              } else if (!attachments || attachments.length === 0) {
+                attachments = [{
+                  id: 'att_' + row.id,
+                  type: (row.image_url.includes('.mp4') || row.image_url.includes('.webm')) ? 'video' : 'image',
+                  name: 'Attachment',
+                  url: row.image_url,
+                  size: 'Media',
+                  is_uploading: false
+                }];
+              }
+            }
+
+            let replyTo = null;
+            if (row.reply_to_json) {
+              try { replyTo = JSON.parse(row.reply_to_json); } catch (e) {}
+            }
+
+            const author = userMap.get(row.user_id);
             const createdAtIso = row.created_at || new Date().toISOString();
             const createdTs = new Date(createdAtIso).getTime() || Date.now();
+
+            // Correct user_avatar resolution (NEVER use image_url as user_avatar!)
+            const userAvatar = row.user_avatar || author?.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(row.username || 'u')}`;
+            const userName = row.user_name || author?.name || row.username;
+            const verifiedType = row.verified_type || author?.verified_type || 'none';
+
             return {
               id: row.id,
               channel_id: row.channel_id || 'chan_public',
               user_id: row.user_id,
-              user_name: row.username,
+              user_name: userName,
               username: row.username,
-              user_avatar: row.image_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(row.username || 'u')}`,
-              verified_type: 'none',
-              content: row.content,
+              user_avatar: userAvatar,
+              verified_type: verifiedType,
+              content: row.content || '',
+              attachments: Array.isArray(attachments) ? attachments : [],
+              gif_url: gifUrl,
               reactions: reactions,
+              reply_to: replyTo,
               created_at: createdAtIso,
               created_timestamp: createdTs
             };
           });
         }
-      } catch (e) {}
+      } catch (e) {
+        console.error('D1 getMessages error:', e);
+      }
     }
     return memoryState.messages;
   }
@@ -2579,15 +2645,33 @@ export default {
         if (dbStore.d1) {
           try {
             await dbStore.d1.prepare(`
-              INSERT INTO community_messages (id, channel_id, user_id, username, content, image_url, reactions_json, created_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+              INSERT OR REPLACE INTO community_messages (
+                id, channel_id, user_id, username, user_name, user_avatar, verified_type, content, image_url, gif_url, attachments_json, reactions_json, reply_to_json, created_at
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `).bind(
               newMsg.id, newMsg.channel_id || 'chan_public', newMsg.user_id,
-              newMsg.username, newMsg.content || '', newMsg.gif_url || (newMsg.attachments?.[0]?.url || null),
-              JSON.stringify(newMsg.reactions || {}), nowIso
+              newMsg.username, newMsg.user_name || newMsg.username, newMsg.user_avatar || '',
+              newMsg.verified_type || 'none', newMsg.content || '',
+              newMsg.gif_url || (newMsg.attachments?.[0]?.url || null),
+              newMsg.gif_url || null,
+              JSON.stringify(newMsg.attachments || []),
+              JSON.stringify(newMsg.reactions || {}),
+              JSON.stringify(newMsg.reply_to || null),
+              nowIso
             ).run();
           } catch (e) {
-            console.error('D1 message save error:', e);
+            try {
+              await dbStore.d1.prepare(`
+                INSERT OR REPLACE INTO community_messages (id, channel_id, user_id, username, content, image_url, reactions_json, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+              `).bind(
+                newMsg.id, newMsg.channel_id || 'chan_public', newMsg.user_id,
+                newMsg.username, newMsg.content || '', newMsg.gif_url || (newMsg.attachments?.[0]?.url || null),
+                JSON.stringify(newMsg.reactions || {}), nowIso
+              ).run();
+            } catch (fallbackErr) {
+              console.error('D1 message save fallback error:', fallbackErr);
+            }
           }
         }
 
@@ -2896,11 +2980,25 @@ export default {
         const safeExt = (mimeType?.split('/')[1] || filename?.split('.').pop() || 'bin').replace(/[^a-zA-Z0-9]/g, '').slice(0, 8);
         const uniqueName = 'file_' + Date.now() + '_' + Math.random().toString(36).substr(2, 6) + '.' + safeExt;
 
-        memoryState.files.set(uniqueName, {
+        const fileRecord = {
           mime_type: mimeType || 'application/octet-stream',
           data,
           created_at: new Date().toISOString()
-        });
+        };
+
+        memoryState.files.set(uniqueName, fileRecord);
+
+        // Permanent D1 persistence across all edge nodes & cold starts
+        if (dbStore.d1) {
+          try {
+            await dbStore.d1.prepare(`
+              INSERT OR REPLACE INTO community_files (file_name, mime_type, data, created_at)
+              VALUES (?, ?, ?, ?)
+            `).bind(uniqueName, fileRecord.mime_type, fileRecord.data, fileRecord.created_at).run();
+          } catch (fileDbErr) {
+            console.error('D1 save file error:', fileDbErr);
+          }
+        }
 
         return new Response(JSON.stringify({
           success: true,
@@ -2916,23 +3014,44 @@ export default {
 
     if (path.startsWith('/api/community/files/') && request.method === 'GET') {
       const fileName = path.split('/')[4];
-      const row = memoryState.files.get(fileName);
+      let row = memoryState.files.get(fileName);
+
+      // Check D1 if not in memory isolate
+      if (!row && dbStore.d1) {
+        try {
+          const dbRow = await dbStore.d1.prepare('SELECT * FROM community_files WHERE file_name = ?').bind(fileName).first();
+          if (dbRow && dbRow.data) {
+            row = {
+              mime_type: dbRow.mime_type,
+              data: dbRow.data,
+              created_at: dbRow.created_at
+            };
+            memoryState.files.set(fileName, row);
+          }
+        } catch (e) {
+          console.error('D1 fetch file error:', e);
+        }
+      }
 
       if (row && row.data) {
-        let buffer;
-        if (row.data.startsWith('data:')) {
-          const commaIdx = row.data.indexOf(',');
-          buffer = Uint8Array.from(atob(row.data.slice(commaIdx + 1)), c => c.charCodeAt(0));
-        } else {
-          buffer = Uint8Array.from(atob(row.data), c => c.charCodeAt(0));
-        }
-        return new Response(buffer, {
-          headers: {
-            ...CORS_HEADERS,
-            'Content-Type': row.mime_type || 'application/octet-stream',
-            'Cache-Control': 'public, max-age=31536000, immutable'
+        try {
+          let buffer;
+          if (row.data.startsWith('data:')) {
+            const commaIdx = row.data.indexOf(',');
+            buffer = Uint8Array.from(atob(row.data.slice(commaIdx + 1)), c => c.charCodeAt(0));
+          } else {
+            buffer = Uint8Array.from(atob(row.data), c => c.charCodeAt(0));
           }
-        });
+          return new Response(buffer, {
+            headers: {
+              ...CORS_HEADERS,
+              'Content-Type': row.mime_type || 'application/octet-stream',
+              'Cache-Control': 'public, max-age=31536000, immutable'
+            }
+          });
+        } catch (bufErr) {
+          console.error('Buffer decode error:', bufErr);
+        }
       }
 
       return new Response('File not found', { status: 404, headers: CORS_HEADERS });
