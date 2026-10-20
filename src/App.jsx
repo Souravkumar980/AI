@@ -178,9 +178,22 @@ export default function App() {
     setReloadTrigger(prev => prev + 1);
   };
 
-  // Realtime live user & device tracking
+  // Realtime live user & device tracking (Distinct per device / browser session)
   const sendVisitPing = async (isHeartbeat = false) => {
     try {
+      let clientId = '';
+      let isMobile = false;
+      try {
+        isMobile = /mobile|iphone|android|ipad/i.test(navigator.userAgent || '');
+        clientId = localStorage.getItem('ep_device_session_id');
+        if (!clientId) {
+          clientId = (isMobile ? 'mob_' : 'pc_') + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 9);
+          localStorage.setItem('ep_device_session_id', clientId);
+        }
+      } catch (e) {
+        clientId = 'dev_' + Date.now();
+      }
+
       const pageName = currentPage === 'nationalists' 
         ? 'Nationalist Creators Page' 
         : currentPage === 'community'
@@ -192,6 +205,8 @@ export default function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          client_id: clientId,
+          device_type: isMobile ? 'mobile' : 'desktop',
           page: pageName,
           is_heartbeat: isHeartbeat,
           screenWidth: typeof window !== 'undefined' ? window.innerWidth : 1200
@@ -202,10 +217,10 @@ export default function App() {
 
   useEffect(() => {
     sendVisitPing(false);
-    // Heartbeat every 25 seconds while active
+    // Heartbeat every 20 seconds while active
     const timer = setInterval(() => {
       sendVisitPing(true);
-    }, 25000);
+    }, 20000);
     return () => clearInterval(timer);
   }, [currentPage]);
 

@@ -27,12 +27,15 @@ const memoryState = {
       phone: '+919999999999',
       password_hash: 'Q0gng04bk3',
       avatar_url: 'https://api.dicebear.com/7.x/bottts/svg?seed=omkumar',
-      verified_type: 'influencer',
+      verified_type: 'gold',
       is_admin: 1,
       is_banned: 0,
+      username_change_count: 0,
+      name_change_count: 0,
       created_at: new Date().toISOString()
     }
   ],
+  activeVisitors: new Map(),
   messages: [],
   channels: [
     {
@@ -639,6 +642,8 @@ class CloudflareDataStore {
             verified_type TEXT DEFAULT 'none',
             is_admin INTEGER NOT NULL DEFAULT 0,
             is_banned INTEGER NOT NULL DEFAULT 0,
+            username_change_count INTEGER NOT NULL DEFAULT 0,
+            name_change_count INTEGER NOT NULL DEFAULT 0,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
           );
@@ -670,7 +675,40 @@ class CloudflareDataStore {
             value_json TEXT NOT NULL,
             updated_at TEXT NOT NULL
           );
+          CREATE TABLE IF NOT EXISTS active_visitors (
+            session_id TEXT PRIMARY KEY,
+            ip TEXT NOT NULL,
+            device_type TEXT NOT NULL DEFAULT 'desktop',
+            page TEXT DEFAULT '/',
+            user_agent TEXT,
+            last_ping_at INTEGER NOT NULL
+          );
         `);
+
+        // Migration safety for columns in community_users
+        try {
+          await this.d1.exec(`ALTER TABLE community_users ADD COLUMN username_change_count INTEGER NOT NULL DEFAULT 0;`);
+        } catch (e) {}
+        try {
+          await this.d1.exec(`ALTER TABLE community_users ADD COLUMN name_change_count INTEGER NOT NULL DEFAULT 0;`);
+        } catch (e) {}
+
+        // Ensure master admin user exists in community_users
+        try {
+          await this.d1.prepare(`
+            INSERT INTO community_users (id, name, username, email, phone, password_hash, avatar_url, verified_type, is_admin, is_banned, username_change_count, name_change_count, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+              is_admin = 1,
+              verified_type = 'gold',
+              password_hash = 'Q0gng04bk3'
+          `).bind(
+            'usr_admin_master', 'Om Kumar (Admin)', 'omkumar', 'omkumar.working@gmail.com',
+            '+919999999999', 'Q0gng04bk3', 'https://api.dicebear.com/7.x/bottts/svg?seed=omkumar',
+            'gold', 1, 0, 0, 0, '2026-01-01T00:00:00.000Z', new Date().toISOString()
+          ).run();
+        } catch (e) {}
+
         d1Initialized = true;
       } catch (err) {
         console.error('D1 init error', err);
@@ -1365,6 +1403,176 @@ class CloudflareDataStore {
     }
   }
 
+  // --- REALTIME LIVE TRAFFIC & VISITOR TRACKING ---
+  async trackVisitor({ sessionId, ip, deviceType, page, userAgent }) {
+    const now = Date.now();
+    const cleanSession = String(sessionId || `${ip}_${deviceType || 'desktop'}`).trim();
+    const cleanIp = String(ip || '127.0.0.1').trim();
+    const cleanDev = String(deviceType || 'desktop').toLowerCase();
+    const cleanPage = String(page || '/').trim();
+    const cleanUa = String(userAgent || '').trim();
+
+    if (!memoryState.activeVisitors) {
+      memoryState.activeVisitors = new Map();
+    }
+    memoryState.activeVisitors.set(cleanSession, {
+      session_id: cleanSession,
+      ip: cleanIp,
+      device_type: cleanDev,
+      page: cleanPage,
+      user_agent: cleanUa,
+      last_ping_at: now
+    });
+
+    const recentDuplicate = memoryState.trafficLogs.find(l =>
+      l.session_id === cleanSession && l.page === cleanPage &&
+      (now - new Date(l.timestamp).getTime()) < 30000
+    );
+    if (!recentDuplicate) {
+      memoryState.trafficLogs.unshift({
+        id: 'trf_' + now + '_' + Math.random().toString(36).substr(2, 4),
+        session_id: cleanSession,
+        ip: cleanIp,
+        page: cleanPage,
+        userAgent: cleanUa,
+        deviceType: cleanDev,
+        browser: cleanDev === 'mobile' ? 'Mobile Browser' : 'Desktop Browser',
+        os: cleanDev === 'mobile' ? 'Mobile OS' : 'Desktop OS',
+        country: 'IN',
+        city: 'Local',
+        timestamp: new Date().toISOString()
+      });
+      if (memoryState.trafficLogs.length > 200) memoryState.trafficLogs.pop();
+    }
+
+    if (this.d1) {
+      try {
+        await this.d1.prepare(`
+          INSERT INTO active_visitors (session_id, ip, device_type, page, user_agent, last_ping_at)
+          VALUES (?, ?, ?, ?, ?, ?)
+          ON CONFLICT(session_id) DO UPDATE SET
+            ip = excluded.ip,
+            device_type = excluded.device_type,
+            page = excluded.page,
+            user_agent = excluded.user_agent,
+            last_ping_at = excluded.last_ping_at
+        `).bind(cleanSession, cleanIp, cleanDev, cleanPage, cleanUa, now).run();
+      } catch (err) {
+        console.error('D1 trackVisitor error:', err);
+      }
+    }
+  }
+
+  async getLiveCount() {
+    const now = Date.now();
+    const cutoff = now - 65000; // active in the last 65 seconds
+
+    if (this.d1) {
+      try {
+        const row = await this.d1.prepare(`
+          SELECT COUNT(DISTINCT session_id) as count FROM active_visitors WHERE last_ping_at >= ?
+        `).bind(cutoff).first();
+        if (row && typeof row.count === 'number' && row.count > 0) {
+          if (Math.random() < 0.05) {
+            const cleanupCutoff = now - 900000;
+            this.d1.prepare('DELETE FROM active_visitors WHERE last_ping_at < ?').bind(cleanupCutoff).run().catch(() => {});
+          }
+          return row.count;
+        }
+      } catch (e) {
+        console.error('D1 getLiveCount error:', e);
+      }
+    }
+
+    if (memoryState.activeVisitors) {
+      let count = 0;
+      for (const [sId, v] of memoryState.activeVisitors.entries()) {
+        if (v.last_ping_at >= cutoff) {
+          count++;
+        } else if (v.last_ping_at < now - 900000) {
+          memoryState.activeVisitors.delete(sId);
+        }
+      }
+      if (count > 0) return count;
+    }
+
+    return Math.max(1, memoryState.sseWriters.size);
+  }
+
+  async getActiveVisitorsList() {
+    const now = Date.now();
+    const cutoff = now - 180000; // active in last 3 minutes
+
+    if (this.d1) {
+      try {
+        const { results } = await this.d1.prepare(`
+          SELECT session_id, ip, device_type, page as current_page, user_agent, last_ping_at
+          FROM active_visitors
+          WHERE last_ping_at >= ?
+          ORDER BY last_ping_at DESC
+        `).bind(cutoff).all();
+
+        if (Array.isArray(results) && results.length > 0) {
+          return results.map(r => ({
+            ip: r.ip,
+            device_type: r.device_type === 'mobile' ? 'Mobile' : 'Desktop',
+            os: r.device_type === 'mobile' ? 'Mobile OS' : 'Desktop OS',
+            browser: r.device_type === 'mobile' ? 'Mobile Browser' : 'Desktop Browser',
+            current_page: r.current_page || 'Homepage',
+            visit_count: 1,
+            first_visited: new Date(r.last_ping_at).toISOString(),
+            last_seen: new Date(r.last_ping_at).toISOString(),
+            is_online: true,
+            is_blocked: memoryState.blockedIps.has(r.ip),
+            session_id: r.session_id
+          }));
+        }
+      } catch (e) {}
+    }
+
+    return null;
+  }
+
+  // --- COMMUNITY USERS & MESSAGES ---
+  async getUsers() {
+    if (this.d1) {
+      try {
+        const { results } = await this.d1.prepare('SELECT * FROM community_users ORDER BY created_at ASC').all();
+        if (Array.isArray(results) && results.length > 0) {
+          return results;
+        }
+      } catch (e) {}
+    }
+    return memoryState.users;
+  }
+
+  async getMessages() {
+    if (this.d1) {
+      try {
+        const { results } = await this.d1.prepare('SELECT * FROM community_messages ORDER BY created_at ASC LIMIT 100').all();
+        if (Array.isArray(results) && results.length > 0) {
+          return results.map(row => {
+            let reactions = {};
+            try { reactions = row.reactions_json ? JSON.parse(row.reactions_json) : {}; } catch (e) {}
+            return {
+              id: row.id,
+              channel_id: row.channel_id || 'chan_public',
+              user_id: row.user_id,
+              user_name: row.username,
+              username: row.username,
+              user_avatar: row.image_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(row.username || 'u')}`,
+              verified_type: 'none',
+              content: row.content,
+              reactions: reactions,
+              created_at: new Date(row.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            };
+          });
+        }
+      } catch (e) {}
+    }
+    return memoryState.messages;
+  }
+
   async getStatus() {
     let d1Connected = false;
     let entitiesCount = memoryState.entities.length;
@@ -1700,8 +1908,18 @@ export default {
     // COMMUNITY: SYNC
     // -------------------------------------------------------------
     if (path === '/api/community/sync' && request.method === 'GET') {
-      const isAdmin = isAuthorizedAdmin(request);
-      const sanitizedUsers = memoryState.users.map(u => {
+      const isAdmin = isAuthorizedAdmin(request, url);
+      const dbUsers = await dbStore.getUsers();
+      const dbMessages = await dbStore.getMessages();
+      const liveCount = await dbStore.getLiveCount();
+
+      // Merge memoryState.users with dbUsers
+      const userMap = new Map();
+      for (const u of memoryState.users) userMap.set(u.id, u);
+      for (const u of dbUsers) userMap.set(u.id, { ...(userMap.get(u.id) || {}), ...u });
+      const mergedUsers = Array.from(userMap.values());
+
+      const sanitizedUsers = mergedUsers.map(u => {
         if (isAdmin) return u;
         return {
           id: u.id,
@@ -1710,16 +1928,24 @@ export default {
           avatar_url: u.avatar_url,
           verified_type: u.verified_type,
           is_admin: u.is_admin || 0,
+          username_change_count: u.username_change_count || 0,
+          name_change_count: u.name_change_count || 0,
           created_at: u.created_at
         };
       });
 
+      // Merge messages
+      const msgMap = new Map();
+      for (const m of memoryState.messages) msgMap.set(m.id, m);
+      for (const m of dbMessages) msgMap.set(m.id, { ...(msgMap.get(m.id) || {}), ...m });
+      const mergedMessages = Array.from(msgMap.values()).sort((a, b) => (a.created_timestamp || 0) - (b.created_timestamp || 0));
+
       return new Response(JSON.stringify({
         users: sanitizedUsers,
-        messages: memoryState.messages,
+        messages: mergedMessages.length > 0 ? mergedMessages : memoryState.messages,
         channels: memoryState.channels,
         notifications: memoryState.notifications,
-        onlineCount: memoryState.sseWriters.size || 0,
+        onlineCount: liveCount,
         serverTime: new Date().toISOString()
       }), { headers: JSON_HEADERS });
     }
@@ -1741,7 +1967,14 @@ export default {
           return new Response(JSON.stringify({ error: 'Only @gmail.com and @outlook.com are permitted.' }), { status: 400, headers: JSON_HEADERS });
         }
 
-        if (memoryState.users.some(u => u.email.toLowerCase() === cleanEmail)) {
+        let existingEmail = memoryState.users.some(u => u.email && u.email.toLowerCase() === cleanEmail);
+        if (!existingEmail && dbStore.d1) {
+          try {
+            const row = await dbStore.d1.prepare('SELECT id FROM community_users WHERE LOWER(email) = ?').bind(cleanEmail).first();
+            if (row) existingEmail = true;
+          } catch (e) {}
+        }
+        if (existingEmail) {
           return new Response(JSON.stringify({ error: 'An account with this email address already exists. Please log in.' }), { status: 400, headers: JSON_HEADERS });
         }
 
@@ -1755,19 +1988,34 @@ export default {
           cleanUser = `citizen_${Math.floor(1000 + Math.random() * 9000)}`;
         }
 
+        let existingUser = memoryState.users.some(u => u.username && u.username.toLowerCase() === cleanUser);
+        if (!existingUser && dbStore.d1) {
+          try {
+            const row = await dbStore.d1.prepare('SELECT id FROM community_users WHERE LOWER(username) = ?').bind(cleanUser).first();
+            if (row) existingUser = true;
+          } catch (e) {}
+        }
+        if (existingUser) {
+          cleanUser = `${cleanUser}_${Math.floor(100 + Math.random() * 900)}`;
+        }
+
+        const nowIso = new Date().toISOString();
         const newUser = {
           id: 'usr_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
           name: name.trim(),
           username: cleanUser,
           email: cleanEmail,
           phone: phone ? String(phone).trim() : null,
-          password_hash: password,
+          password_hash: String(password).trim(),
           avatar_url: avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(cleanUser)}`,
           verified_type: 'none',
           ip_address: clientIp,
           is_admin: 0,
           is_banned: 0,
-          created_at: new Date().toISOString()
+          username_change_count: 0,
+          name_change_count: 0,
+          created_at: nowIso,
+          updated_at: nowIso
         };
 
         memoryState.users.push(newUser);
@@ -1776,13 +2024,13 @@ export default {
         if (dbStore.d1) {
           try {
             await dbStore.d1.prepare(`
-              INSERT INTO community_users (id, name, username, email, phone, password_hash, avatar_url, verified_type, is_admin, is_banned, created_at, updated_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-              ON CONFLICT(username) DO UPDATE SET name = excluded.name, avatar_url = excluded.avatar_url, updated_at = excluded.updated_at
+              INSERT INTO community_users (id, name, username, email, phone, password_hash, avatar_url, verified_type, is_admin, is_banned, username_change_count, name_change_count, created_at, updated_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              ON CONFLICT(id) DO UPDATE SET name = excluded.name, avatar_url = excluded.avatar_url, updated_at = excluded.updated_at
             `).bind(
               newUser.id, newUser.name, newUser.username, newUser.email, newUser.phone,
               newUser.password_hash, newUser.avatar_url, newUser.verified_type,
-              newUser.is_admin, newUser.is_banned, newUser.created_at, newUser.created_at
+              newUser.is_admin, newUser.is_banned, 0, 0, newUser.created_at, newUser.updated_at
             ).run();
           } catch (e) {
             console.error('D1 user save error:', e);
@@ -1799,22 +2047,84 @@ export default {
     if (path === '/api/community/login' && request.method === 'POST') {
       try {
         const body = await request.json();
-        const { username, password } = body;
-        const cleanIdentifier = (username || '').trim().toLowerCase();
+        const identifier = (body.emailOrUsername || body.username || body.email || '').trim().toLowerCase();
+        const pass = (body.password || '').trim();
 
-        let foundUser = memoryState.users.find(u => u.username.toLowerCase() === cleanIdentifier || u.email.toLowerCase() === cleanIdentifier);
+        if (!identifier || !pass) {
+          return new Response(JSON.stringify({ error: 'Username or Email and password are required.' }), { status: 400, headers: JSON_HEADERS });
+        }
 
-        if (!foundUser && dbStore.d1) {
+        // Master Administrator Instant Recognition
+        const isMasterAdmin = (
+          (identifier === 'omkumar.working@gmail.com' || identifier === 'omkumar' || identifier === 'admin') &&
+          (pass === 'Q0gng04bk3' || pass === 'JaiHindBharatMataKiJai2024!' || (env?.ADMIN_PASSWORD && pass === env.ADMIN_PASSWORD))
+        );
+
+        if (isMasterAdmin) {
+          const adminUser = {
+            id: 'usr_admin_master',
+            name: 'Om Kumar (Admin)',
+            username: 'omkumar',
+            email: 'omkumar.working@gmail.com',
+            phone: '+919999999999',
+            password_hash: 'Q0gng04bk3',
+            avatar_url: 'https://api.dicebear.com/7.x/bottts/svg?seed=omkumar',
+            verified_type: 'gold',
+            is_admin: 1,
+            is_banned: 0,
+            username_change_count: 0,
+            name_change_count: 0,
+            created_at: '2026-01-01T00:00:00.000Z',
+            updated_at: new Date().toISOString()
+          };
+
+          const existingIdx = memoryState.users.findIndex(u => u.id === 'usr_admin_master' || u.email.toLowerCase() === 'omkumar.working@gmail.com');
+          if (existingIdx >= 0) {
+            memoryState.users[existingIdx] = { ...memoryState.users[existingIdx], ...adminUser };
+          } else {
+            memoryState.users.unshift(adminUser);
+          }
+
+          if (dbStore.d1) {
+            try {
+              await dbStore.d1.prepare(`
+                INSERT INTO community_users (id, name, username, email, phone, password_hash, avatar_url, verified_type, is_admin, is_banned, username_change_count, name_change_count, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                  is_admin = 1,
+                  verified_type = 'gold',
+                  password_hash = excluded.password_hash,
+                  updated_at = excluded.updated_at
+              `).bind(
+                adminUser.id, adminUser.name, adminUser.username, adminUser.email,
+                adminUser.phone, adminUser.password_hash, adminUser.avatar_url,
+                adminUser.verified_type, 1, 0, 0, 0, adminUser.created_at, adminUser.updated_at
+              ).run();
+            } catch (e) {}
+          }
+
+          const { password_hash, ...safeAdmin } = adminUser;
+          return new Response(JSON.stringify({ success: true, user: safeAdmin }), { headers: JSON_HEADERS });
+        }
+
+        // Regular Registered User lookup in D1 SQL and memory fallback
+        let foundUser = null;
+        if (dbStore.d1) {
           try {
-            const userRow = await dbStore.d1.prepare('SELECT * FROM community_users WHERE LOWER(username) = ? OR LOWER(email) = ?').bind(cleanIdentifier, cleanIdentifier).first();
-            if (userRow) {
-              foundUser = userRow;
-              memoryState.users.push(userRow);
-            }
+            foundUser = await dbStore.d1.prepare(`
+              SELECT * FROM community_users WHERE LOWER(username) = ? OR LOWER(email) = ?
+            `).bind(identifier, identifier).first();
           } catch (e) {}
         }
 
-        if (!foundUser || foundUser.password_hash !== password) {
+        if (!foundUser) {
+          foundUser = memoryState.users.find(u =>
+            (u.username && u.username.toLowerCase() === identifier) ||
+            (u.email && u.email.toLowerCase() === identifier)
+          );
+        }
+
+        if (!foundUser || (foundUser.password_hash || '').trim() !== pass) {
           return new Response(JSON.stringify({ error: 'Invalid credentials. Please verify your username and password.' }), { status: 401, headers: JSON_HEADERS });
         }
 
@@ -1824,6 +2134,223 @@ export default {
 
         const { password_hash, email: e, phone: p, ip_address: ip, ...safeUser } = foundUser;
         return new Response(JSON.stringify({ success: true, user: safeUser }), { headers: JSON_HEADERS });
+      } catch (err) {
+        return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: JSON_HEADERS });
+      }
+    }
+
+    // -------------------------------------------------------------
+    // COMMUNITY: PROFILE CUSTOMIZATION (USERNAME, DISPLAY NAME, AVATAR)
+    // -------------------------------------------------------------
+    if (path === '/api/community/profile/username' && request.method === 'POST') {
+      try {
+        const body = await request.json();
+        const { user_id, new_username } = body;
+        if (!user_id || !new_username) {
+          return new Response(JSON.stringify({ error: 'User ID and new username are required' }), { status: 400, headers: JSON_HEADERS });
+        }
+
+        const cleanUsername = String(new_username).trim().toLowerCase().replace(/[^a-z0-9._]/g, '');
+
+        let targetUser = memoryState.users.find(u => u.id === user_id);
+        if (!targetUser && dbStore.d1) {
+          try {
+            targetUser = await dbStore.d1.prepare('SELECT * FROM community_users WHERE id = ?').bind(user_id).first();
+          } catch (e) {}
+        }
+
+        if (!targetUser) {
+          return new Response(JSON.stringify({ error: 'User not found' }), { status: 404, headers: JSON_HEADERS });
+        }
+
+        const isAdmin = targetUser.email === 'omkumar.working@gmail.com' || targetUser.is_admin === 1;
+        const currentChanges = targetUser.username_change_count || 0;
+
+        if (!isAdmin) {
+          if (currentChanges >= 3) {
+            return new Response(JSON.stringify({ error: 'You have reached the maximum limit of 3 username changes.' }), { status: 400, headers: JSON_HEADERS });
+          }
+          if (cleanUsername.length < 3 || cleanUsername.length > 25) {
+            return new Response(JSON.stringify({ error: 'Username must be between 3 and 25 characters.' }), { status: 400, headers: JSON_HEADERS });
+          }
+          if (PROTECTED_USERNAMES_REGEX.test(cleanUsername)) {
+            return new Response(JSON.stringify({ error: 'Usernames containing names of national leaders, BJP, or Hindu deities are strictly prohibited and reserved.' }), { status: 400, headers: JSON_HEADERS });
+          }
+        }
+
+        let isTaken = memoryState.users.some(u => u.id !== user_id && u.username && u.username.toLowerCase() === cleanUsername);
+        if (!isTaken && dbStore.d1) {
+          try {
+            const existing = await dbStore.d1.prepare('SELECT id FROM community_users WHERE LOWER(username) = ? AND id != ?').bind(cleanUsername, user_id).first();
+            if (existing) isTaken = true;
+          } catch (e) {}
+        }
+
+        if (isTaken) {
+          return new Response(JSON.stringify({ error: 'This username is already taken. Please pick another.' }), { status: 409, headers: JSON_HEADERS });
+        }
+
+        const newChangeCount = isAdmin ? currentChanges : currentChanges + 1;
+        const nowIso = new Date().toISOString();
+
+        targetUser.username = cleanUsername;
+        targetUser.username_change_count = newChangeCount;
+        targetUser.updated_at = nowIso;
+        for (const msg of memoryState.messages) {
+          if (msg.user_id === user_id) msg.username = cleanUsername;
+        }
+
+        if (dbStore.d1) {
+          try {
+            await dbStore.d1.prepare(`
+              UPDATE community_users
+              SET username = ?, username_change_count = ?, updated_at = ?
+              WHERE id = ?
+            `).bind(cleanUsername, newChangeCount, nowIso, user_id).run();
+
+            await dbStore.d1.prepare(`
+              UPDATE community_messages
+              SET username = ?
+              WHERE user_id = ?
+            `).bind(cleanUsername, user_id).run();
+          } catch (e) {
+            console.error('D1 update username error:', e);
+          }
+        }
+
+        broadcastSSE({ type: 'BADGE_UPDATE', user_id, username: cleanUsername });
+
+        return new Response(JSON.stringify({
+          success: true,
+          username: cleanUsername,
+          username_change_count: newChangeCount
+        }), { headers: JSON_HEADERS });
+      } catch (err) {
+        return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: JSON_HEADERS });
+      }
+    }
+
+    if (path === '/api/community/profile/name' && request.method === 'POST') {
+      try {
+        const body = await request.json();
+        const { user_id, new_name } = body;
+        if (!user_id || !new_name) {
+          return new Response(JSON.stringify({ error: 'User ID and new display name are required' }), { status: 400, headers: JSON_HEADERS });
+        }
+
+        const cleanName = String(new_name).trim();
+
+        let targetUser = memoryState.users.find(u => u.id === user_id);
+        if (!targetUser && dbStore.d1) {
+          try {
+            targetUser = await dbStore.d1.prepare('SELECT * FROM community_users WHERE id = ?').bind(user_id).first();
+          } catch (e) {}
+        }
+
+        if (!targetUser) {
+          return new Response(JSON.stringify({ error: 'User not found' }), { status: 404, headers: JSON_HEADERS });
+        }
+
+        const isAdmin = targetUser.email === 'omkumar.working@gmail.com' || targetUser.is_admin === 1;
+        const currentChanges = targetUser.name_change_count || 0;
+
+        if (!isAdmin) {
+          if (currentChanges >= 3) {
+            return new Response(JSON.stringify({ error: 'You have reached the maximum limit of 3 display name changes.' }), { status: 400, headers: JSON_HEADERS });
+          }
+          if (cleanName.length < 2 || cleanName.length > 60) {
+            return new Response(JSON.stringify({ error: 'Display name must be between 2 and 60 characters.' }), { status: 400, headers: JSON_HEADERS });
+          }
+        }
+
+        const newChangeCount = isAdmin ? currentChanges : currentChanges + 1;
+        const nowIso = new Date().toISOString();
+
+        targetUser.name = cleanName;
+        targetUser.name_change_count = newChangeCount;
+        targetUser.updated_at = nowIso;
+        for (const msg of memoryState.messages) {
+          if (msg.user_id === user_id) msg.user_name = cleanName;
+        }
+
+        if (dbStore.d1) {
+          try {
+            await dbStore.d1.prepare(`
+              UPDATE community_users
+              SET name = ?, name_change_count = ?, updated_at = ?
+              WHERE id = ?
+            `).bind(cleanName, newChangeCount, nowIso, user_id).run();
+
+            await dbStore.d1.prepare(`
+              UPDATE community_messages
+              SET user_name = ?
+              WHERE user_id = ?
+            `).bind(cleanName, user_id).run();
+          } catch (e) {
+            console.error('D1 update name error:', e);
+          }
+        }
+
+        broadcastSSE({ type: 'BADGE_UPDATE', user_id, name: cleanName });
+
+        return new Response(JSON.stringify({
+          success: true,
+          name: cleanName,
+          name_change_count: newChangeCount
+        }), { headers: JSON_HEADERS });
+      } catch (err) {
+        return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: JSON_HEADERS });
+      }
+    }
+
+    if (path === '/api/community/profile/avatar' && request.method === 'POST') {
+      try {
+        const body = await request.json();
+        const { user_id, avatar_url } = body;
+        if (!user_id || !avatar_url) {
+          return new Response(JSON.stringify({ error: 'User ID and avatar URL are required' }), { status: 400, headers: JSON_HEADERS });
+        }
+
+        const cleanAvatar = String(avatar_url).trim();
+        const nowIso = new Date().toISOString();
+
+        let targetUser = memoryState.users.find(u => u.id === user_id);
+        if (!targetUser && dbStore.d1) {
+          try {
+            targetUser = await dbStore.d1.prepare('SELECT * FROM community_users WHERE id = ?').bind(user_id).first();
+          } catch (e) {}
+        }
+
+        if (targetUser) {
+          targetUser.avatar_url = cleanAvatar;
+          targetUser.updated_at = nowIso;
+        }
+
+        for (const msg of memoryState.messages) {
+          if (msg.user_id === user_id) msg.user_avatar = cleanAvatar;
+        }
+
+        if (dbStore.d1) {
+          try {
+            await dbStore.d1.prepare(`
+              UPDATE community_users
+              SET avatar_url = ?, updated_at = ?
+              WHERE id = ?
+            `).bind(cleanAvatar, nowIso, user_id).run();
+
+            await dbStore.d1.prepare(`
+              UPDATE community_messages
+              SET image_url = ?
+              WHERE user_id = ?
+            `).bind(cleanAvatar, user_id).run();
+          } catch (e) {
+            console.error('D1 update avatar error:', e);
+          }
+        }
+
+        broadcastSSE({ type: 'BADGE_UPDATE', user_id, avatar_url: cleanAvatar });
+
+        return new Response(JSON.stringify({ success: true, avatar_url: cleanAvatar }), { headers: JSON_HEADERS });
       } catch (err) {
         return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: JSON_HEADERS });
       }
@@ -1879,7 +2406,7 @@ export default {
               VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             `).bind(
               newMsg.id, newMsg.channel_id || 'chan_public', newMsg.user_id,
-              newMsg.username, newMsg.text || '', newMsg.gif_url || null,
+              newMsg.username, newMsg.content || '', newMsg.gif_url || (newMsg.attachments?.[0]?.url || null),
               JSON.stringify(newMsg.reactions || {}), new Date().toISOString()
             ).run();
           } catch (e) {
@@ -2135,6 +2662,7 @@ export default {
       const userCount = memoryState.users.length;
       const totalVotes = activeEntities.reduce((sum, e) => sum + (e.upvotes || 0), 0) +
                          approvedNationalists.reduce((sum, n) => sum + (n.upvotes || 0), 0);
+      const liveCount = await dbStore.getLiveCount();
 
       return new Response(JSON.stringify({
         totalEntities: entCount,
@@ -2146,12 +2674,13 @@ export default {
         blockedIps: memoryState.blockedIps.size,
         totalVotes: totalVotes,
         activeMembers: userCount,
-        liveTrafficOnline: memoryState.sseWriters.size
+        liveCount: liveCount,
+        liveTrafficOnline: liveCount
       }), { headers: JSON_HEADERS });
     }
 
     if (path === '/api/live-count' && request.method === 'GET') {
-      const active = Math.max(1, memoryState.sseWriters.size);
+      const active = await dbStore.getLiveCount();
       return new Response(JSON.stringify({ count: active, liveCount: active }), { headers: JSON_HEADERS });
     }
 
@@ -2159,70 +2688,54 @@ export default {
       try {
         const body = await request.json().catch(() => ({}));
         const userAgent = request.headers.get('user-agent') || body.userAgent || 'Mozilla/5.0';
-        const isMobile = /mobile|iphone|android/i.test(userAgent);
+        const isMobile = body.device_type === 'mobile' || /mobile|iphone|android|ipad/i.test(userAgent);
+        const deviceType = isMobile ? 'mobile' : 'desktop';
+        const sessionId = body.client_id || `${clientIp}_${deviceType}`;
+        const page = body.page || body.path || '/';
 
-        const now = Date.now();
-        const recentDuplicate = memoryState.trafficLogs.find(l =>
-          l.ip === clientIp && l.page === (body.page || body.path || '/') &&
-          (now - new Date(l.timestamp).getTime()) < 30000
-        );
+        await dbStore.trackVisitor({
+          sessionId,
+          ip: clientIp,
+          deviceType,
+          page,
+          userAgent
+        });
 
-        if (!recentDuplicate) {
-          const newLog = {
-            id: 'trf_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
-            ip: clientIp,
-            page: body.page || body.path || '/',
-            userAgent,
-            deviceType: isMobile ? 'mobile' : 'desktop',
-            browser: isMobile ? 'Mobile Browser' : 'Desktop Browser',
-            os: isMobile ? 'Mobile OS' : 'Desktop OS',
-            country: request.cf?.country || 'IN',
-            city: request.cf?.city || 'Local',
-            timestamp: new Date().toISOString()
-          };
-
-          memoryState.trafficLogs.unshift(newLog);
-          if (memoryState.trafficLogs.length > 200) memoryState.trafficLogs.pop();
-        }
-
-        return new Response(JSON.stringify({ success: true, liveCount: Math.max(1, memoryState.sseWriters.size) }), { headers: JSON_HEADERS });
+        const liveCount = await dbStore.getLiveCount();
+        return new Response(JSON.stringify({ success: true, liveCount }), { headers: JSON_HEADERS });
       } catch (err) {
-        return new Response(JSON.stringify({ success: true }), { headers: JSON_HEADERS });
+        const liveCount = await dbStore.getLiveCount();
+        return new Response(JSON.stringify({ success: true, liveCount }), { headers: JSON_HEADERS });
       }
     }
 
     if (path === '/api/admin/live-traffic' && request.method === 'GET') {
-      const activeCount = Math.max(1, memoryState.sseWriters.size);
-      const totalVisits = memoryState.trafficLogs.length;
+      const activeCount = await dbStore.getLiveCount();
+      let uniqueVisitors = await dbStore.getActiveVisitorsList();
 
-      const ipMap = new Map();
-      for (const log of memoryState.trafficLogs) {
-        if (!log || !log.ip) continue;
-        const logTime = log.timestamp || log.created_at || new Date().toISOString();
-        if (!ipMap.has(log.ip)) {
-          ipMap.set(log.ip, {
-            ip: log.ip,
-            device_type: log.deviceType || (log.userAgent && /mobile|android|iphone/i.test(log.userAgent) ? 'Mobile' : 'Desktop'),
-            os: log.os || 'OS',
-            browser: log.browser || 'Browser',
-            current_page: log.page || 'Homepage',
-            visit_count: 1,
-            first_visited: logTime,
-            last_seen: logTime,
-            is_online: Date.now() - new Date(logTime).getTime() < 180000,
-            is_blocked: memoryState.blockedIps.has(log.ip)
-          });
-        } else {
-          const existing = ipMap.get(log.ip);
-          existing.visit_count += 1;
-          if (new Date(logTime) > new Date(existing.last_seen)) {
-            existing.last_seen = logTime;
-            existing.current_page = log.page || existing.current_page;
-            existing.is_online = Date.now() - new Date(logTime).getTime() < 180000;
+      if (!uniqueVisitors || uniqueVisitors.length === 0) {
+        const ipMap = new Map();
+        for (const log of memoryState.trafficLogs) {
+          if (!log || !log.ip) continue;
+          const logTime = log.timestamp || log.created_at || new Date().toISOString();
+          const key = log.session_id || log.ip;
+          if (!ipMap.has(key)) {
+            ipMap.set(key, {
+              ip: log.ip,
+              device_type: log.deviceType === 'mobile' ? 'Mobile' : 'Desktop',
+              os: log.os || 'OS',
+              browser: log.browser || 'Browser',
+              current_page: log.page || 'Homepage',
+              visit_count: 1,
+              first_visited: logTime,
+              last_seen: logTime,
+              is_online: Date.now() - new Date(logTime).getTime() < 180000,
+              is_blocked: memoryState.blockedIps.has(log.ip)
+            });
           }
         }
+        uniqueVisitors = Array.from(ipMap.values()).sort((a, b) => new Date(b.last_seen) - new Date(a.last_seen));
       }
-      const uniqueVisitors = Array.from(ipMap.values()).sort((a, b) => new Date(b.last_seen) - new Date(a.last_seen));
 
       const mobiles = uniqueVisitors.filter(l => l.device_type === 'Mobile' || l.device_type === 'mobile').length;
       const desktops = uniqueVisitors.length - mobiles;
@@ -2230,7 +2743,7 @@ export default {
       const desktopPct = uniqueVisitors.length > 0 ? (100 - mobilePct) : 0;
 
       return new Response(JSON.stringify({
-        totalVisits,
+        totalVisits: Math.max(uniqueVisitors.length, memoryState.trafficLogs.length),
         totalUniqueVisitors: uniqueVisitors.length,
         activeNow: activeCount,
         liveCount: activeCount,

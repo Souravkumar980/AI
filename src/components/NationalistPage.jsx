@@ -68,13 +68,13 @@ export default function NationalistPage({ onOpenSuggest, onNavigatePropagandus, 
         const res = await fetch('/api/live-count');
         if (res.ok) {
           const data = await res.json();
-          if (data?.liveCount) setLiveCount(data.liveCount);
+          if (data?.liveCount !== undefined) setLiveCount(data.liveCount);
         }
       } catch (e) {}
     };
 
     fetchLive();
-    const interval = setInterval(fetchLive, 8000);
+    const interval = setInterval(fetchLive, 5000);
     return () => clearInterval(interval);
   }, []);
 

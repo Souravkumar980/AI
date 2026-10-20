@@ -131,6 +131,8 @@ CREATE TABLE IF NOT EXISTS community_users (
   verified_type TEXT DEFAULT 'none',
   is_admin INTEGER NOT NULL DEFAULT 0,
   is_banned INTEGER NOT NULL DEFAULT 0,
+  username_change_count INTEGER NOT NULL DEFAULT 0,
+  name_change_count INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -170,6 +172,18 @@ CREATE TABLE IF NOT EXISTS site_kv_store (
   value_json TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
+
+-- 12. Realtime Active Visitors (Distinct per device session)
+CREATE TABLE IF NOT EXISTS active_visitors (
+  session_id TEXT PRIMARY KEY,
+  ip TEXT NOT NULL,
+  device_type TEXT NOT NULL DEFAULT 'desktop',
+  page TEXT DEFAULT '/',
+  user_agent TEXT,
+  last_ping_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_active_visitors_ping ON active_visitors(last_ping_at DESC);
 
 -- Initial Categories Seed
 INSERT OR IGNORE INTO categories (id, name, type, count, created_at) VALUES
