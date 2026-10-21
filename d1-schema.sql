@@ -180,6 +180,13 @@ CREATE TABLE IF NOT EXISTS community_files (
   created_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS community_file_chunks (
+  file_name TEXT NOT NULL,
+  chunk_index INTEGER NOT NULL,
+  chunk_data TEXT NOT NULL,
+  PRIMARY KEY (file_name, chunk_index)
+);
+
 -- 11. Global App Key-Value Store (for settings, polls, traffic, announcements)
 CREATE TABLE IF NOT EXISTS site_kv_store (
   key TEXT PRIMARY KEY,

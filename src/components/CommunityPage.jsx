@@ -378,8 +378,8 @@ const extractDmPartnerId = (channelId, currentUserId, allUsers = []) => {
   return null;
 };
 
-// Fast in-browser image compressor producing lightweight, crisp JPEG (150-250KB in < 50ms)
-const compressImageFile = (file, maxDim = 1200, quality = 0.82) => {
+// Fast in-browser image compressor producing lightweight, crisp JPEG (70-130KB in < 50ms)
+const compressImageFile = (file, maxDim = 1000, quality = 0.72) => {
   return new Promise((resolve) => {
     try {
       if (!file || !file.type?.startsWith('image/') || file.type === 'image/gif') {
@@ -858,7 +858,12 @@ export default function CommunityPage({ onSelectPage }) {
       if (res.ok) {
         const data = await res.json();
         if (data.users && Array.isArray(data.users)) {
-          setUsers(prev => prev.length !== data.users.length ? data.users : prev);
+          setUsers(prev => {
+            const prevHash = prev.map(u => `${u.id}_${u.avatar_url || ''}_${u.name || ''}_${u.username || ''}`).join('|');
+            const newHash = data.users.map(u => `${u.id}_${u.avatar_url || ''}_${u.name || ''}_${u.username || ''}`).join('|');
+            if (prevHash !== newHash) return data.users;
+            return prev;
+          });
         }
         if (data.messages && Array.isArray(data.messages)) {
           setMessages(prev => {
@@ -1072,7 +1077,13 @@ export default function CommunityPage({ onSelectPage }) {
             });
           }
           fetchCommunitySync();
-        } else if (data.type === 'USER_BANNED' || data.type === 'BADGE_UPDATE' || data.type === 'SYNC_NOW') {
+        } else if (data.type === 'BADGE_UPDATE') {
+          if (data.user_id && data.avatar_url) {
+            setUsers(prev => prev.map(u => u.id === data.user_id ? { ...u, avatar_url: data.avatar_url } : u));
+            setMessages(prev => prev.map(m => m.user_id === data.user_id ? { ...m, user_avatar: data.avatar_url } : m));
+          }
+          fetchCommunitySync();
+        } else if (data.type === 'USER_BANNED' || data.type === 'SYNC_NOW') {
           fetchCommunitySync();
         }
       } catch (e) {}
@@ -2497,16 +2508,30 @@ export default function CommunityPage({ onSelectPage }) {
     return false;
   });
 
-  // Filter channels strictly: private channels are HIDDEN unless user is creator, member, or pending requester
+  // Filter channels strictly: WhatsApp Group Model.
+  // Private channels are HIDDEN unless user is creator or admitted member (or has a pending request/active room)
+  const isChannelMember = (chan, uid) => {
+    if (!chan || !uid) return false;
+    return Array.isArray(chan.members) && chan.members.some(m => (typeof m === 'string' ? m === uid : m?.user_id === uid));
+  };
+
+  const isChannelPending = (chan, uid) => {
+    if (!chan || !uid) return false;
+    return Array.isArray(chan.pending_requests) && chan.pending_requests.some(r => (typeof r === 'string' ? r === uid : r?.user_id === uid));
+  };
+
   const visibleChannels = channels.filter(chan => {
     if (!currentUser) {
       return activeChatRoom === chan.id || activeChatRoom === `gate_${chan.id}`;
     }
-    if (currentUser.is_admin) return true;
-    if (chan.creator_id === currentUser.id) return true;
-    if (Array.isArray(chan.members) && chan.members.includes(currentUser.id)) return true;
-    if (Array.isArray(chan.pending_requests) && chan.pending_requests.some(r => r.user_id === currentUser.id)) return true;
-    if (activeChatRoom === chan.id || activeChatRoom === `gate_${chan.id}`) return true;
+    const isCreator = chan.creator_id === currentUser.id;
+    const isJoined = isChannelMember(chan, currentUser.id);
+    const isPending = isChannelPending(chan, currentUser.id);
+    const isActive = activeChatRoom === chan.id || activeChatRoom === `gate_${chan.id}`;
+
+    // WhatsApp Group Model: Only show if user is creator or member (or has active request/opened via join link)
+    if (isCreator || isJoined) return true;
+    if (isPending || isActive) return true;
     return false;
   });
 
@@ -3101,7 +3126,7 @@ export default function CommunityPage({ onSelectPage }) {
                               title={`View ${msg.user_name}'s profile`}
                             >
                               <img
-                                src={msg.user_avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${msg.username}`}
+                                src={senderUser?.avatar_url || msg.user_avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${msg.username}`}
                                 alt=""
                                 className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl border-2 border-black object-cover bg-white shadow-sm"
                               />
@@ -4836,8 +4861,8 @@ export default function CommunityPage({ onSelectPage }) {
 
             <div className="flex items-center gap-2 sm:gap-3 shrink-0">
               <a
-                href={activeMediaViewer.url}
-                download={activeMediaViewer.name || 'download'}
+                href={`${resolveMediaUrl(activeMediaViewer.url)}${resolveMediaUrl(activeMediaViewer.url).includes('?') ? '&' : '?'}download=1`}
+                download={activeMediaViewer.name || (activeMediaViewer.type === 'video' ? 'video.mp4' : (activeMediaViewer.type === 'pdf' ? 'document.pdf' : 'image.jpg'))}
                 className="px-3 py-1.5 bg-white/15 hover:bg-white/25 rounded-xl text-white font-bold flex items-center gap-1.5 text-xs border border-white/20 transition-all"
                 title="Download file to device"
               >
@@ -5085,8 +5110,8 @@ export default function CommunityPage({ onSelectPage }) {
                 <FileText className="w-16 h-16 mx-auto mb-3 text-saffron" />
                 <p className="font-bold text-sm mb-2">{activeMediaViewer.name}</p>
                 <a
-                  href={activeMediaViewer.url}
-                  download={activeMediaViewer.name}
+                  href={`${resolveMediaUrl(activeMediaViewer.url)}${resolveMediaUrl(activeMediaViewer.url).includes('?') ? '&' : '?'}download=1`}
+                  download={activeMediaViewer.name || 'document'}
                   className="mt-3 inline-flex items-center gap-2 px-4 py-2 bg-saffron text-black font-black rounded-xl text-xs uppercase shadow-md"
                 >
                   <Download className="w-4 h-4" /> Download File

@@ -180,39 +180,103 @@ async function fetchInstagramProfile(handle) {
   let bio = '';
   let avatarUrl = '';
 
+  const clean = handle.replace(/^[@/]+/, '').replace(/\/+$/, '').trim();
+
+  // 1. Fetch via high-speed public web viewer (insta-stories-viewer.com)
   try {
-    const candidates = [handle, handle.replace(/([a-z])([A-Z])/g, '$1_$2')];
-    for (const h of candidates) {
-      const fxRes = await fetch(`https://api.fxtwitter.com/${encodeURIComponent(h)}`, {
-        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' }
-      });
-      if (fxRes.ok) {
-        const fxData = await fxRes.json().catch(() => null);
-        if (fxData && fxData.code === 200 && fxData.user) {
-          const u = fxData.user;
-          if (u.name) name = u.name;
-          if (u.description) bio = u.description;
-          if (u.avatar_url) avatarUrl = u.avatar_url.replace('_normal.', '_400x400.');
-          if (typeof u.followers === 'number') {
-            if (u.followers >= 1000000) followers = (u.followers / 1000000).toFixed(2) + 'M followers';
-            else if (u.followers >= 1000) followers = (u.followers / 1000).toFixed(1) + 'K followers';
-            else followers = u.followers + ' followers';
-          }
+    const res = await fetch(`https://insta-stories-viewer.com/${encodeURIComponent(clean)}`, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9'
+      }
+    });
+    if (res.ok) {
+      const text = await res.text();
+      const picMatch = text.match(/<img[^>]*class="profile__avatar-pic"[^>]*src="([^"]+)"/i);
+      if (picMatch && picMatch[1]) {
+        avatarUrl = picMatch[1];
+      }
+      const bioMatch = text.match(/<div class="profile__description">([\s\S]*?)<\/div>/i) ||
+                       text.match(/<p class="profile__description">([\s\S]*?)<\/p>/i);
+      if (bioMatch && bioMatch[1]) {
+        bio = bioMatch[1].replace(/<[^>]+>/g, '').trim();
+      }
+      const stats = text.match(/<li class="profile__stats-item">([\s\S]*?)<\/li>/gi) || [];
+      for (const stat of stats) {
+        const cleanedStat = stat.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+        if (/followers/i.test(cleanedStat)) {
+          followers = cleanedStat;
           break;
         }
       }
     }
-  } catch (e) {}
+  } catch (e) {
+    console.error('IG scrape error:', e);
+  }
 
-  if (!name) name = formatHandleName(handle);
+  // 2. Direct Instagram web_profile_info fallback
+  if (!avatarUrl || !followers) {
+    try {
+      const igRes = await fetch(`https://www.instagram.com/api/v1/users/web_profile_info/?username=${encodeURIComponent(clean)}&hl=en`, {
+        headers: {
+          'User-Agent': 'Instagram 126.0.0.25.121 Android (23/6.0.1; 320dpi; 720x1280; samsung; SM-A310F; a3xelte; samsungexynos7580; en_GB; 110937453)',
+          'X-Ig-App-Id': '936619743392459',
+          'Accept': '*/*'
+        }
+      });
+      if (igRes.ok) {
+        const igData = await igRes.json();
+        const user = igData?.data?.user;
+        if (user) {
+          if (!name && user.full_name) name = user.full_name;
+          if (!avatarUrl && (user.profile_pic_url_hd || user.profile_pic_url)) avatarUrl = user.profile_pic_url_hd || user.profile_pic_url;
+          if (!bio && user.biography) bio = user.biography;
+          if (!followers && typeof user.edge_followed_by?.count === 'number') {
+            const count = user.edge_followed_by.count;
+            if (count >= 1000000) followers = (count / 1000000).toFixed(1) + 'M followers';
+            else if (count >= 1000) followers = (count / 1000).toFixed(1) + 'K followers';
+            else followers = count + ' followers';
+          }
+        }
+      }
+    } catch (e) {}
+  }
+
+  // 3. DuckDuckGo snippet fallback for followers/name/bio
+  if (!name || !followers) {
+    try {
+      const ddgRes = await fetch(`https://html.duckduckgo.com/html/?q=site:instagram.com/${encodeURIComponent(clean)}`, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+        }
+      });
+      if (ddgRes.ok) {
+        const ddgText = await ddgRes.text();
+        const snippets = ddgText.match(/<a class="result__snippet[^>]*>([\s\S]*?)<\/a>/g) || [];
+        for (const s of snippets) {
+          const raw = s.replace(/<[^>]+>/g, '').replace(/&quot;/g, '"').replace(/&#x27;/g, "'").trim();
+          const m = raw.match(/([0-9.,]+[KMBkmb]?\s*Followers)[\s\S]*?-\s*([^(@]+)\s*\(@([^)]+)\)\s*on Instagram(?::\s*"([^"]*)")?/i);
+          if (m) {
+            if (!followers && m[1]) followers = m[1];
+            if (!name && m[2]) name = m[2].trim();
+            if (!bio && m[4]) bio = m[4].trim();
+            break;
+          }
+        }
+      }
+    } catch (e) {}
+  }
+
+  if (!name) name = formatHandleName(clean);
   if (!avatarUrl) {
-    avatarUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(name || handle)}&background=E1306C&color=ffffff&size=512&bold=true&font-size=0.38`;
+    avatarUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(name || clean)}&background=E1306C&color=ffffff&size=512&bold=true&font-size=0.38`;
   }
 
   return {
     success: true,
     platform: 'insta',
-    handle,
+    handle: clean,
     name,
     avatarUrl,
     followers: followers || null,
@@ -681,6 +745,12 @@ class CloudflareDataStore {
             mime_type TEXT NOT NULL,
             data TEXT NOT NULL,
             created_at TEXT NOT NULL
+          );
+          CREATE TABLE IF NOT EXISTS community_file_chunks (
+            file_name TEXT NOT NULL,
+            chunk_index INTEGER NOT NULL,
+            chunk_data TEXT NOT NULL,
+            PRIMARY KEY (file_name, chunk_index)
           );
           CREATE TABLE IF NOT EXISTS site_kv_store (
             key TEXT PRIMARY KEY,
@@ -1591,7 +1661,7 @@ class CloudflareDataStore {
             if (!gifUrl && row.image_url) {
               if (row.image_url.includes('giphy.com') || row.image_url.includes('.gif') || row.image_url.includes('api.giphy.com') || row.image_url.startsWith('data:image/gif')) {
                 gifUrl = row.image_url;
-              } else if (!attachments || attachments.length === 0) {
+              } else if ((!attachments || attachments.length === 0) && !row.image_url.includes('avatar_') && row.image_url !== author?.avatar_url) {
                 attachments = [{
                   id: 'att_' + row.id,
                   type: (row.image_url.includes('.mp4') || row.image_url.includes('.webm')) ? 'video' : 'image',
@@ -1612,8 +1682,8 @@ class CloudflareDataStore {
             const createdAtIso = row.created_at || new Date().toISOString();
             const createdTs = new Date(createdAtIso).getTime() || Date.now();
 
-            // Correct user_avatar resolution (NEVER use image_url as user_avatar!)
-            const userAvatar = row.user_avatar || author?.avatar_url || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(row.username || 'u')}`;
+            // Correct user_avatar resolution (prioritize latest author avatar across whole platform)
+            const userAvatar = author?.avatar_url || row.user_avatar || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(row.username || 'u')}`;
             const userName = row.user_name || author?.name || row.username;
             const verifiedType = row.verified_type || author?.verified_type || 'none';
 
@@ -2582,9 +2652,16 @@ export default {
 
             await dbStore.d1.prepare(`
               UPDATE community_messages
-              SET image_url = ?
+              SET user_avatar = ?
               WHERE user_id = ?
             `).bind(cleanAvatar, user_id).run();
+
+            // Clean up any corrupted image_url accidentally set to avatar
+            await dbStore.d1.prepare(`
+              UPDATE community_messages
+              SET image_url = NULL
+              WHERE user_id = ? AND (image_url = ? OR image_url LIKE '%avatar_%')
+            `).bind(user_id, cleanAvatar).run();
           } catch (e) {
             console.error('D1 update avatar error:', e);
           }
@@ -2991,10 +3068,29 @@ export default {
         // Permanent D1 persistence across all edge nodes & cold starts
         if (dbStore.d1) {
           try {
-            await dbStore.d1.prepare(`
-              INSERT OR REPLACE INTO community_files (file_name, mime_type, data, created_at)
-              VALUES (?, ?, ?, ?)
-            `).bind(uniqueName, fileRecord.mime_type, fileRecord.data, fileRecord.created_at).run();
+            // Split into 350KB chunks to safely avoid Cloudflare D1 1MB SQL statement limit
+            const CHUNK_SIZE = 350000;
+            if (data.length <= CHUNK_SIZE) {
+              await dbStore.d1.prepare(`
+                INSERT OR REPLACE INTO community_files (file_name, mime_type, data, created_at)
+                VALUES (?, ?, ?, ?)
+              `).bind(uniqueName, fileRecord.mime_type, fileRecord.data, fileRecord.created_at).run();
+            } else {
+              // Store placeholder in community_files and individual chunks in community_file_chunks
+              await dbStore.d1.prepare(`
+                INSERT OR REPLACE INTO community_files (file_name, mime_type, data, created_at)
+                VALUES (?, ?, '__CHUNKED__', ?)
+              `).bind(uniqueName, fileRecord.mime_type, fileRecord.created_at).run();
+
+              const totalChunks = Math.ceil(data.length / CHUNK_SIZE);
+              for (let i = 0; i < totalChunks; i++) {
+                const chunkData = data.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
+                await dbStore.d1.prepare(`
+                  INSERT OR REPLACE INTO community_file_chunks (file_name, chunk_index, chunk_data)
+                  VALUES (?, ?, ?)
+                `).bind(uniqueName, i, chunkData).run();
+              }
+            }
           } catch (fileDbErr) {
             console.error('D1 save file error:', fileDbErr);
           }
@@ -3013,27 +3109,36 @@ export default {
     }
 
     if (path.startsWith('/api/community/files/') && request.method === 'GET') {
-      const fileName = path.split('/')[4];
+      const fileName = path.split('/')[4]?.split('?')[0];
       let row = memoryState.files.get(fileName);
 
       // Check D1 if not in memory isolate
-      if (!row && dbStore.d1) {
+      if ((!row || !row.data) && dbStore.d1) {
         try {
           const dbRow = await dbStore.d1.prepare('SELECT * FROM community_files WHERE file_name = ?').bind(fileName).first();
-          if (dbRow && dbRow.data) {
-            row = {
-              mime_type: dbRow.mime_type,
-              data: dbRow.data,
-              created_at: dbRow.created_at
-            };
-            memoryState.files.set(fileName, row);
+          if (dbRow) {
+            let fullData = dbRow.data;
+            if (fullData === '__CHUNKED__') {
+              const { results: chunks } = await dbStore.d1.prepare('SELECT chunk_data FROM community_file_chunks WHERE file_name = ? ORDER BY chunk_index ASC').bind(fileName).all();
+              if (Array.isArray(chunks) && chunks.length > 0) {
+                fullData = chunks.map(c => c.chunk_data).join('');
+              }
+            }
+            if (fullData && fullData !== '__CHUNKED__') {
+              row = {
+                mime_type: dbRow.mime_type,
+                data: fullData,
+                created_at: dbRow.created_at
+              };
+              memoryState.files.set(fileName, row);
+            }
           }
         } catch (e) {
           console.error('D1 fetch file error:', e);
         }
       }
 
-      if (row && row.data) {
+      if (row && row.data && row.data !== '__CHUNKED__') {
         try {
           let buffer;
           if (row.data.startsWith('data:')) {
@@ -3042,10 +3147,15 @@ export default {
           } else {
             buffer = Uint8Array.from(atob(row.data), c => c.charCodeAt(0));
           }
+          const isDownload = url.searchParams.get('download') === '1';
+          const disposition = isDownload ? 'attachment' : 'inline';
+          const cleanFileName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
+
           return new Response(buffer, {
             headers: {
               ...CORS_HEADERS,
               'Content-Type': row.mime_type || 'application/octet-stream',
+              'Content-Disposition': `${disposition}; filename="${cleanFileName}"`,
               'Cache-Control': 'public, max-age=31536000, immutable'
             }
           });

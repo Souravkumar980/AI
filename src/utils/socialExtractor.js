@@ -160,24 +160,20 @@ export async function autoFetchSocialProfile(inputUrl, platformHint = 'auto') {
   } else if (platform === 'yt' && handle) {
     extractedAvatar = `https://unavatar.io/youtube/@${handle}`;
   } else if (platform === 'insta' && handle) {
-    // Cross-platform public lookup for creators across Instagram/X/YouTube
+    // High-accuracy Instagram profile & avatar extractor
     try {
-      const candidates = [handle, handle.replace(/([a-z])([A-Z])/g, '$1_$2')];
-      for (const h of candidates) {
-        const fxRes = await fetch(`https://api.fxtwitter.com/${encodeURIComponent(h)}`);
-        if (fxRes.ok) {
-          const fxData = await fxRes.json();
-          if (fxData && fxData.code === 200 && fxData.user) {
-            const u = fxData.user;
-            if (u.name) extractedName = u.name;
-            if (u.avatar_url) {
-              extractedAvatar = u.avatar_url.replace('_normal.', '_400x400.');
-            }
-            if (typeof u.followers === 'number') {
-              if (u.followers >= 1000000) extractedFollowers = (u.followers / 1000000).toFixed(2) + 'M followers';
-              else if (u.followers >= 1000) extractedFollowers = (u.followers / 1000).toFixed(1) + 'K followers';
-              else extractedFollowers = u.followers + ' followers';
-            }
+      const res = await fetch(`https://insta-stories-viewer.com/${encodeURIComponent(handle)}`);
+      if (res.ok) {
+        const text = await res.text();
+        const picMatch = text.match(/<img[^>]*class="profile__avatar-pic"[^>]*src="([^"]+)"/i);
+        if (picMatch && picMatch[1]) {
+          extractedAvatar = picMatch[1];
+        }
+        const stats = text.match(/<li class="profile__stats-item">([\s\S]*?)<\/li>/gi) || [];
+        for (const stat of stats) {
+          const cleaned = stat.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+          if (/followers/i.test(cleaned)) {
+            extractedFollowers = cleaned;
             break;
           }
         }
