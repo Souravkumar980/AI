@@ -182,17 +182,40 @@ export default function App() {
   const sendVisitPing = async (isHeartbeat = false) => {
     try {
       let clientId = '';
-      let isMobile = false;
+      const userAgent = (typeof navigator !== 'undefined' ? navigator.userAgent : '') || '';
+      const winW = typeof window !== 'undefined' ? window.innerWidth : 1200;
+      const touchPoints = typeof navigator !== 'undefined' ? (navigator.maxTouchPoints || 0) : 0;
+      
+      const isTablet = /tablet|ipad|playbook|silk/i.test(userAgent) || (touchPoints > 1 && winW >= 768 && winW <= 1024);
+      const isMobile = !isTablet && (/mobile|iphone|ipod|android|blackberry|opera mini|iemobile|wpdesktop/i.test(userAgent) || winW < 768);
+      const deviceType = isTablet ? 'tablet' : (isMobile ? 'mobile' : 'desktop');
+
       try {
-        isMobile = /mobile|iphone|android|ipad/i.test(navigator.userAgent || '');
         clientId = localStorage.getItem('ep_device_session_id');
         if (!clientId) {
-          clientId = (isMobile ? 'mob_' : 'pc_') + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 9);
+          const prefix = isTablet ? 'tab_' : (isMobile ? 'mob_' : 'pc_');
+          clientId = prefix + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 9);
           localStorage.setItem('ep_device_session_id', clientId);
         }
       } catch (e) {
-        clientId = 'dev_' + Date.now();
+        clientId = (isTablet ? 'tab_' : (isMobile ? 'mob_' : 'pc_')) + Date.now();
       }
+
+      // Proactively resolve real client IP if not yet in session
+      let clientIp = '';
+      try {
+        clientIp = sessionStorage.getItem('ep_real_ip') || '';
+        if (!clientIp && !isHeartbeat) {
+          fetch('https://api.ipify.org?format=json')
+            .then(r => r.json())
+            .then(data => {
+              if (data && data.ip) {
+                sessionStorage.setItem('ep_real_ip', data.ip);
+              }
+            })
+            .catch(() => {});
+        }
+      } catch (e) {}
 
       const pageName = currentPage === 'nationalists' 
         ? 'Nationalist Creators Page' 
@@ -201,15 +224,18 @@ export default function App() {
         : currentPage === 'suggest-feature'
         ? 'Suggest Updates & Features Page'
         : 'Homepage / Propagandus Directory';
+
       await fetch('/api/track-visit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           client_id: clientId,
-          device_type: isMobile ? 'mobile' : 'desktop',
+          client_ip: clientIp,
+          device_type: deviceType,
           page: pageName,
+          userAgent: userAgent,
           is_heartbeat: isHeartbeat,
-          screenWidth: typeof window !== 'undefined' ? window.innerWidth : 1200
+          screenWidth: winW
         })
       });
     } catch (e) {}

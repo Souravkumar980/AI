@@ -14,7 +14,7 @@ export default function Header({
   onLogoClick
 }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const { lang, toggleLang, t } = useLanguage();
+  const { t } = useLanguage();
   const music = useMusicPlayer();
   const isPlaying = music?.isPlaying;
   const togglePlay = music?.togglePlay;
@@ -86,18 +86,8 @@ export default function Header({
           </div>
         </div>
 
-        {/* Right Action Controls: Language Switch & Donate */}
+        {/* Right Action Controls: Donate */}
         <div className="flex items-center gap-1.5 shrink-0">
-          {/* Language Toggle Button (English / हिन्दी) */}
-          <button
-            onClick={toggleLang}
-            className="px-2 sm:px-2.5 py-0.5 bg-white hover:bg-gray-100 text-black border border-black rounded-lg text-[10px] font-black uppercase shadow-[1px_1px_0px_#000] flex items-center gap-1 active:translate-y-0.5 transition-all shrink-0 cursor-pointer"
-            title="Switch Language / भाषा बदलें"
-          >
-            <span>🇮🇳</span>
-            <span>{lang === 'en' ? 'हिन्दी' : 'English'}</span>
-          </button>
-
           {/* Donate Option Button in Top Right Corner */}
           {onOpenDonate && (
             <button

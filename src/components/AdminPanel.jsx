@@ -260,17 +260,19 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
   });
   const [loadingLiveTraffic, setLoadingLiveTraffic] = useState(false);
 
-  // Strictly deduplicated unique visitors directory by IP address
+  // Deduplicated active visitors directory by session (distinct per device / tab)
   const uniqueVisitorsList = React.useMemo(() => {
     const map = new Map();
     (liveTrafficData.visitors || []).forEach(v => {
       if (!v || !v.ip) return;
-      const cleanIp = String(v.ip).replace(/^::ffff:/i, '').split(':')[0].trim();
+      const cleanIp = String(v.ip).replace(/^::ffff:/i, '').trim();
       if (!cleanIp) return;
-      if (!map.has(cleanIp)) {
-        map.set(cleanIp, { ...v, ip: cleanIp, visit_count: Number(v.visit_count) || 1 });
+      // Key by session_id to distinguish phone vs PC on the same IP
+      const key = v.session_id || `${cleanIp}_${v.device_type || 'desktop'}`;
+      if (!map.has(key)) {
+        map.set(key, { ...v, ip: cleanIp, visit_count: Number(v.visit_count) || 1 });
       } else {
-        const prev = map.get(cleanIp);
+        const prev = map.get(key);
         prev.visit_count = Math.max(prev.visit_count || 1, Number(v.visit_count) || 1);
         if (new Date(v.last_seen) >= new Date(prev.last_seen)) {
           prev.last_seen = v.last_seen;
@@ -2380,10 +2382,10 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
                       </div>
                       <div className="mt-2 font-comic text-3xl sm:text-4xl text-chakraNavy font-black flex items-baseline gap-2">
                         <span>{liveTrafficData.totalUniqueVisitors}</span>
-                        <span className="text-xs font-mono font-bold text-gray-500 uppercase">IPs</span>
+                        <span className="text-xs font-mono font-bold text-gray-500 uppercase">Devices</span>
                       </div>
                       <div className="text-[11px] font-bold text-gray-600 mt-1">
-                        <span>Distinct visitors (1 per IP)</span>
+                        <span>Distinct devices &amp; sessions</span>
                       </div>
                     </div>
 
@@ -2408,15 +2410,21 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
                       <div className="space-y-1.5 text-xs font-mono font-bold">
                         <div className="flex items-center justify-between text-gray-800">
                           <span className="flex items-center gap-1"><Smartphone className="w-3.5 h-3.5 text-blue-600" /> Mobile:</span>
-                          <span className="bg-blue-100 text-blue-900 px-2 py-0.5 rounded font-black">{liveTrafficData.deviceBreakdown?.mobile || 0}</span>
+                          <span className="bg-blue-100 text-blue-900 px-2 py-0.5 rounded font-black">
+                            {liveTrafficData.deviceBreakdown?.mobile || 0} ({liveTrafficData.deviceBreakdown?.mobilePct ?? 0}%)
+                          </span>
                         </div>
                         <div className="flex items-center justify-between text-gray-800">
                           <span className="flex items-center gap-1"><Monitor className="w-3.5 h-3.5 text-purple-600" /> Desktop:</span>
-                          <span className="bg-purple-100 text-purple-900 px-2 py-0.5 rounded font-black">{liveTrafficData.deviceBreakdown?.desktop || 0}</span>
+                          <span className="bg-purple-100 text-purple-900 px-2 py-0.5 rounded font-black">
+                            {liveTrafficData.deviceBreakdown?.desktop || 0} ({liveTrafficData.deviceBreakdown?.desktopPct ?? 0}%)
+                          </span>
                         </div>
                         <div className="flex items-center justify-between text-gray-800">
                           <span className="flex items-center gap-1"><Tablet className="w-3.5 h-3.5 text-amber-600" /> Tablet:</span>
-                          <span className="bg-amber-100 text-amber-900 px-2 py-0.5 rounded font-black">{liveTrafficData.deviceBreakdown?.tablet || 0}</span>
+                          <span className="bg-amber-100 text-amber-900 px-2 py-0.5 rounded font-black">
+                            {liveTrafficData.deviceBreakdown?.tablet || 0} ({liveTrafficData.deviceBreakdown?.tabletPct ?? 0}%)
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -2429,7 +2437,7 @@ export default function AdminPanel({ isOpen, onClose, onRefreshData, onNavigateC
                         <h4 className="font-comic text-lg sm:text-xl text-black uppercase flex items-center gap-2">
                           <span>Detailed Visitor Directory</span>
                           <span className="bg-gray-100 border border-black text-xs font-mono px-2 py-0.5 rounded-full">
-                            {uniqueVisitorsList.length} Unique IPs
+                            {uniqueVisitorsList.length} Active Sessions / Devices
                           </span>
                         </h4>
                         <p className="text-xs font-display text-gray-600">

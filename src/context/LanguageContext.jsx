@@ -118,26 +118,12 @@ export const translations = {
 };
 
 export function LanguageProvider({ children }) {
-  const [lang, setLang] = useState(() => {
-    try {
-      return localStorage.getItem('ep_lang') || 'en';
-    } catch (e) {
-      return 'en';
-    }
-  });
+  const lang = 'en';
 
-  const toggleLang = () => {
-    setLang(prev => {
-      const next = prev === 'en' ? 'hi' : 'en';
-      try {
-        localStorage.setItem('ep_lang', next);
-      } catch (e) {}
-      return next;
-    });
-  };
+  const toggleLang = () => {};
 
   const t = (key, fallback = '') => {
-    return translations[lang]?.[key] || translations['en']?.[key] || fallback || key;
+    return translations['en']?.[key] || fallback || key;
   };
 
   return (

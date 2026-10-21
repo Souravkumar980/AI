@@ -173,6 +173,50 @@ function formatHandleName(handle) {
     .join(' ');
 }
 
+function isLocalOrPrivateIp(ip) {
+  if (!ip) return true;
+  const clean = String(ip).replace(/^::ffff:/i, '').trim();
+  if (clean === '127.0.0.1' || clean === '::1' || clean === 'localhost') return true;
+  if (clean.startsWith('10.') || clean.startsWith('192.168.')) return true;
+  if (/^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(clean)) return true;
+  return false;
+}
+
+function extractClientIp(request, body = {}) {
+  // 1. Direct Cloudflare connecting IP
+  const cf = request.headers.get('cf-connecting-ip');
+  if (cf && cf.trim() && !isLocalOrPrivateIp(cf.trim())) return cf.trim();
+
+  // 2. True-Client-IP header (enterprise Cloudflare / Akamai)
+  const trueClient = request.headers.get('true-client-ip');
+  if (trueClient && trueClient.trim() && !isLocalOrPrivateIp(trueClient.trim())) return trueClient.trim();
+
+  // 3. X-Real-IP
+  const xReal = request.headers.get('x-real-ip');
+  if (xReal && xReal.trim() && !isLocalOrPrivateIp(xReal.trim())) return xReal.trim();
+
+  // 4. X-Client-IP
+  const xClient = request.headers.get('x-client-ip');
+  if (xClient && xClient.trim() && !isLocalOrPrivateIp(xClient.trim())) return xClient.trim();
+
+  // 5. X-Forwarded-For (take the first non-internal IP)
+  const forwarded = request.headers.get('x-forwarded-for');
+  if (forwarded && forwarded.trim()) {
+    const parts = forwarded.split(',').map(s => s.trim()).filter(Boolean);
+    for (const p of parts) {
+      if (!isLocalOrPrivateIp(p)) return p;
+    }
+    if (parts.length > 0) return parts[0];
+  }
+
+  // 6. Client verified public IP from request body
+  if (body?.client_ip && typeof body.client_ip === 'string' && !isLocalOrPrivateIp(body.client_ip.trim())) {
+    return body.client_ip.trim();
+  }
+
+  return cf || '127.0.0.1';
+}
+
 // Scrape Instagram Profile
 async function fetchInstagramProfile(handle) {
   let name = '';
@@ -1502,13 +1546,17 @@ class CloudflareDataStore {
     const cleanPage = String(page || '/').trim();
     const cleanUa = String(userAgent || '').trim();
 
+    const displayDev = cleanDev === 'mobile' ? 'Mobile' : (cleanDev === 'tablet' ? 'Tablet' : 'Desktop');
+    const displayOs = cleanDev === 'mobile' ? 'Mobile OS' : (cleanDev === 'tablet' ? 'Tablet OS' : 'Desktop OS');
+    const displayBrowser = cleanDev === 'mobile' ? 'Mobile Browser' : (cleanDev === 'tablet' ? 'Tablet Browser' : 'Desktop Browser');
+
     if (!memoryState.activeVisitors) {
       memoryState.activeVisitors = new Map();
     }
     memoryState.activeVisitors.set(cleanSession, {
       session_id: cleanSession,
       ip: cleanIp,
-      device_type: cleanDev,
+      device_type: displayDev,
       page: cleanPage,
       user_agent: cleanUa,
       last_ping_at: now
@@ -1525,9 +1573,9 @@ class CloudflareDataStore {
         ip: cleanIp,
         page: cleanPage,
         userAgent: cleanUa,
-        deviceType: cleanDev,
-        browser: cleanDev === 'mobile' ? 'Mobile Browser' : 'Desktop Browser',
-        os: cleanDev === 'mobile' ? 'Mobile OS' : 'Desktop OS',
+        deviceType: displayDev,
+        browser: displayBrowser,
+        os: displayOs,
         country: 'IN',
         city: 'Local',
         timestamp: new Date().toISOString()
@@ -1546,7 +1594,7 @@ class CloudflareDataStore {
             page = excluded.page,
             user_agent = excluded.user_agent,
             last_ping_at = excluded.last_ping_at
-        `).bind(cleanSession, cleanIp, cleanDev, cleanPage, cleanUa, now).run();
+        `).bind(cleanSession, cleanIp, displayDev, cleanPage, cleanUa, now).run();
       } catch (err) {
         console.error('D1 trackVisitor error:', err);
       }
@@ -1555,7 +1603,7 @@ class CloudflareDataStore {
 
   async getLiveCount() {
     const now = Date.now();
-    const cutoff = now - 65000; // active in the last 65 seconds
+    const cutoff = now - 90000; // active in the last 90 seconds (heartbeats are every 20s)
 
     if (this.d1) {
       try {
@@ -1603,21 +1651,49 @@ class CloudflareDataStore {
         `).bind(cutoff).all();
 
         if (Array.isArray(results) && results.length > 0) {
-          return results.map(r => ({
-            ip: r.ip,
-            device_type: r.device_type === 'mobile' ? 'Mobile' : 'Desktop',
-            os: r.device_type === 'mobile' ? 'Mobile OS' : 'Desktop OS',
-            browser: r.device_type === 'mobile' ? 'Mobile Browser' : 'Desktop Browser',
-            current_page: r.current_page || 'Homepage',
-            visit_count: 1,
-            first_visited: new Date(r.last_ping_at).toISOString(),
-            last_seen: new Date(r.last_ping_at).toISOString(),
-            is_online: true,
-            is_blocked: memoryState.blockedIps.has(r.ip),
-            session_id: r.session_id
-          }));
+          return results.map(r => {
+            const devLower = String(r.device_type || '').toLowerCase();
+            const devDisplay = devLower === 'mobile' ? 'Mobile' : (devLower === 'tablet' ? 'Tablet' : 'Desktop');
+            return {
+              ip: r.ip,
+              device_type: devDisplay,
+              os: devDisplay + ' OS',
+              browser: devDisplay + ' Browser',
+              current_page: r.current_page || 'Homepage',
+              visit_count: 1,
+              first_visited: new Date(r.last_ping_at).toISOString(),
+              last_seen: new Date(r.last_ping_at).toISOString(),
+              is_online: true,
+              is_blocked: memoryState.blockedIps.has(r.ip),
+              session_id: r.session_id
+            };
+          });
         }
       } catch (e) {}
+    }
+
+    if (memoryState.activeVisitors) {
+      const list = [];
+      for (const v of memoryState.activeVisitors.values()) {
+        if (v.last_ping_at >= cutoff) {
+          const devLower = String(v.device_type || '').toLowerCase();
+          const devDisplay = devLower === 'mobile' ? 'Mobile' : (devLower === 'tablet' ? 'Tablet' : 'Desktop');
+          list.push({
+            ip: v.ip,
+            device_type: devDisplay,
+            os: devDisplay + ' OS',
+            browser: devDisplay + ' Browser',
+            current_page: v.page || 'Homepage',
+            visit_count: 1,
+            first_visited: new Date(v.last_ping_at).toISOString(),
+            last_seen: new Date(v.last_ping_at).toISOString(),
+            is_online: true,
+            is_blocked: memoryState.blockedIps.has(v.ip),
+            session_id: v.session_id
+          });
+        }
+      }
+      if (list.length > 0) return list;
     }
 
     return null;
@@ -1969,7 +2045,7 @@ export default {
       request.method
     ).toUpperCase();
 
-    const clientIp = request.headers.get('cf-connecting-ip') || request.headers.get('x-forwarded-for') || '127.0.0.1';
+    const clientIp = extractClientIp(request);
 
     // 2. IP Blocking Verification
     if (memoryState.blockedIps.has(clientIp)) {
@@ -3205,22 +3281,26 @@ export default {
     if (path === '/api/track-visit' && request.method === 'POST') {
       try {
         const body = await request.json().catch(() => ({}));
+        const realIp = extractClientIp(request, body);
         const userAgent = request.headers.get('user-agent') || body.userAgent || 'Mozilla/5.0';
-        const isMobile = body.device_type === 'mobile' || /mobile|iphone|android|ipad/i.test(userAgent);
-        const deviceType = isMobile ? 'mobile' : 'desktop';
-        const sessionId = body.client_id || `${clientIp}_${deviceType}`;
+        const isTablet = /tablet|ipad|playbook|silk/i.test(userAgent) || body.device_type === 'tablet';
+        const isMobile = !isTablet && (body.device_type === 'mobile' || /mobile|iphone|ipod|android|blackberry|opera mini|iemobile|wpdesktop/i.test(userAgent) || (body.screenWidth && body.screenWidth < 768));
+        const deviceType = isTablet ? 'tablet' : (isMobile ? 'mobile' : 'desktop');
+        const sessionId = (body.client_id && typeof body.client_id === 'string' && body.client_id.length > 3)
+          ? body.client_id
+          : `${realIp}_${deviceType}`;
         const page = body.page || body.path || '/';
 
         await dbStore.trackVisitor({
           sessionId,
-          ip: clientIp,
+          ip: realIp,
           deviceType,
           page,
           userAgent
         });
 
         const liveCount = await dbStore.getLiveCount();
-        return new Response(JSON.stringify({ success: true, liveCount }), { headers: JSON_HEADERS });
+        return new Response(JSON.stringify({ success: true, liveCount, ip: realIp }), { headers: JSON_HEADERS });
       } catch (err) {
         const liveCount = await dbStore.getLiveCount();
         return new Response(JSON.stringify({ success: true, liveCount }), { headers: JSON_HEADERS });
@@ -3232,40 +3312,54 @@ export default {
       let uniqueVisitors = await dbStore.getActiveVisitorsList();
 
       if (!uniqueVisitors || uniqueVisitors.length === 0) {
-        const ipMap = new Map();
+        const sessionMap = new Map();
         for (const log of memoryState.trafficLogs) {
           if (!log || !log.ip) continue;
           const logTime = log.timestamp || log.created_at || new Date().toISOString();
-          const key = log.session_id || log.ip;
-          if (!ipMap.has(key)) {
-            ipMap.set(key, {
+          const key = log.session_id || `${log.ip}_${log.deviceType}`;
+          if (!sessionMap.has(key)) {
+            const devLower = String(log.deviceType || '').toLowerCase();
+            const devDisplay = devLower === 'mobile' ? 'Mobile' : (devLower === 'tablet' ? 'Tablet' : 'Desktop');
+            sessionMap.set(key, {
               ip: log.ip,
-              device_type: log.deviceType === 'mobile' ? 'Mobile' : 'Desktop',
-              os: log.os || 'OS',
-              browser: log.browser || 'Browser',
+              device_type: devDisplay,
+              os: log.os || (devDisplay + ' OS'),
+              browser: log.browser || (devDisplay + ' Browser'),
               current_page: log.page || 'Homepage',
               visit_count: 1,
               first_visited: logTime,
               last_seen: logTime,
               is_online: Date.now() - new Date(logTime).getTime() < 180000,
-              is_blocked: memoryState.blockedIps.has(log.ip)
+              is_blocked: memoryState.blockedIps.has(log.ip),
+              session_id: key
             });
           }
         }
-        uniqueVisitors = Array.from(ipMap.values()).sort((a, b) => new Date(b.last_seen) - new Date(a.last_seen));
+        uniqueVisitors = Array.from(sessionMap.values()).sort((a, b) => new Date(b.last_seen) - new Date(a.last_seen));
       }
 
-      const mobiles = uniqueVisitors.filter(l => l.device_type === 'Mobile' || l.device_type === 'mobile').length;
-      const desktops = uniqueVisitors.length - mobiles;
-      const mobilePct = uniqueVisitors.length > 0 ? Math.round((mobiles / uniqueVisitors.length) * 100) : 0;
-      const desktopPct = uniqueVisitors.length > 0 ? (100 - mobilePct) : 0;
+      const mobiles = uniqueVisitors.filter(l => String(l.device_type).toLowerCase() === 'mobile').length;
+      const tablets = uniqueVisitors.filter(l => String(l.device_type).toLowerCase() === 'tablet').length;
+      const desktops = uniqueVisitors.filter(l => String(l.device_type).toLowerCase() === 'desktop').length;
+      const totalDevices = uniqueVisitors.length || 1;
+      const mobilePct = Math.round((mobiles / totalDevices) * 100);
+      const tabletPct = Math.round((tablets / totalDevices) * 100);
+      const desktopPct = Math.max(0, 100 - mobilePct - tabletPct);
 
       return new Response(JSON.stringify({
         totalVisits: Math.max(uniqueVisitors.length, memoryState.trafficLogs.length),
         totalUniqueVisitors: uniqueVisitors.length,
         activeNow: activeCount,
         liveCount: activeCount,
-        deviceBreakdown: { mobile: mobilePct, desktop: desktopPct, tablet: 0 },
+        deviceBreakdown: {
+          mobile: mobiles,
+          desktop: desktops,
+          tablet: tablets,
+          mobilePct,
+          desktopPct,
+          tabletPct,
+          total: uniqueVisitors.length
+        },
         visitors: uniqueVisitors.slice(0, 50),
         recentLogs: memoryState.trafficLogs.slice(0, 50)
       }), { headers: JSON_HEADERS });
@@ -4152,7 +4246,7 @@ export default {
 
     if (path === '/api/admin/check-access' && request.method === 'GET') {
       const authorized = isAuthorizedAdmin(request, url);
-      return new Response(JSON.stringify({ authorized }), { headers: JSON_HEADERS });
+      return new Response(JSON.stringify({ authorized, allowed: authorized, ip: clientIp }), { headers: JSON_HEADERS });
     }
 
     if (path === '/api/admin/shield-attempts' && request.method === 'GET') {
